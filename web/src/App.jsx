@@ -14,7 +14,7 @@ import Dashboard from './components/Dashboard';
 import ReeferMonitor from './components/ReeferMonitor';
 
 function App() {
-  const { user, checking, sessionExpired, login, logout } = useAuth();
+  const { user, checking, sessionExpired, serverUnreachable, login, logout } = useAuth();
   const {
     stacks, zones, allContainers, loading,
     moveHistory, movementLog,
@@ -64,7 +64,11 @@ function App() {
   }, [setDetailContainer, setStackPopup]);
 
   if (checking) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>Chargement…</div>;
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-dim)' }}>
+        {serverUnreachable ? 'Serveur injoignable, nouvelle tentative dans quelques secondes…' : 'Chargement…'}
+      </div>
+    );
   }
 
   if (!user) {

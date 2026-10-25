@@ -371,7 +371,7 @@ export function useYardState(enabled) {
       try {
         const { count } = await api.compactZone(zoneId);
         if (count === 0) {
-          showToast('info', `Zone ${zoneId} est déjà vide.`);
+          showToast('info', `Zone ${zoneId} : rien à réorganiser.`);
           return;
         }
         showToast('success', `Zone ${zoneId} compactée : ${count} conteneurs réorganisés.`);
@@ -387,7 +387,7 @@ export function useYardState(enabled) {
     try {
       const { total } = await api.compactAll();
       if (total === 0) {
-        showToast('info', 'Le yard est déjà vide.');
+        showToast('info', 'Le yard est déjà compact.');
         return;
       }
       showToast('success', `Yard compacté : ${total} conteneurs réorganisés.`);
@@ -404,7 +404,7 @@ export function useYardState(enabled) {
       const ct = findByBusinessId(containerId);
       if (!ct) return false;
       try {
-        await api.updateReefer(ct._dbId, data);
+        await api.updateReefer(ct._dbId, { ...data, expectedVersion: ct.version });
         await refreshContainers();
         return true;
       } catch (err) {

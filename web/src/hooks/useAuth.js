@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
 import { api, getToken, setToken, onUnauthorized } from '../api/client';
+import { restoreSession } from '../api/session';
 
 export function useAuth() {
   const [token, setTok] = useState(getToken());
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(!!getToken());
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [serverUnreachable, setServerUnreachable] = useState(false);
 
   useEffect(
     () =>
@@ -13,6 +15,7 @@ export function useAuth() {
         setTok(null);
         setUser(null);
         setSessionExpired(true);
+        setChecking(false);
       }),
     [],
   );
@@ -21,24 +24,15 @@ export function useAuth() {
     // `checking` already starts false when there's no persisted token
     // (see useState(!!getToken()) above), so there's nothing to flip here.
     if (!token) return;
-    let cancelled = false;
-    api
-      .me()
-      .then((u) => {
-        if (!cancelled) setUser(u);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setToken(null);
-          setTok(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setChecking(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    return restoreSession({
+      me: api.me,
+      onUser: (u) => {
+        setUser(u);
+        setServerUnreachable(false);
+        setChecking(false);
+      },
+      onRetrying: () => setServerUnreachable(true),
+    });
   }, [token]);
 
   const login = useCallback(async (email, password) => {
@@ -55,5 +49,5 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { token, user, checking, sessionExpired, login, logout };
+  return { token, user, checking, sessionExpired, serverUnreachable, login, logout };
 }
