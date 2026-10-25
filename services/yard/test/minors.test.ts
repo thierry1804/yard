@@ -37,7 +37,7 @@ describe('zone ids are normalized on every route', () => {
     expect(tr.json().zoneId).toBe('A');
     expect((await app.inject({ method: 'PATCH', url: '/zones/b', headers: as('ADMIN'), payload: { label: 'Export' } })).json().label).toBe('Export');
     expect((await app.inject({ url: '/containers?zoneId=a', headers: as('OPERATOR') })).json()).toHaveLength(1);
-    expect((await app.inject({ method: 'POST', url: '/zones/a/compact', headers: as('OPERATOR') })).statusCode).toBe(200);
+    expect((await app.inject({ method: 'POST', url: '/zones/a/compact', headers: as('OPERATOR') })).statusCode).toBe(409);
   });
 });
 

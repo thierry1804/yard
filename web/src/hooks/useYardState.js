@@ -20,6 +20,9 @@ function toUiContainer(c) {
     tier: c.tier,
     version: c.version,
     customsStatus: c.customsStatus,
+    releaseReference: c.releaseReference,
+    releaseRequired: c.releaseRequired,
+    clientHoldReason: c.clientHoldReason,
     entryDate: c.entryDate ? c.entryDate.slice(0, 10) : '',
     exitDate: c.plannedExitDate ? c.plannedExitDate.slice(0, 10) : '',
     reefer: c.reefer
@@ -85,7 +88,7 @@ export function useYardState(enabled) {
 
   const refreshZones = useCallback(async () => {
     const data = await api.getZones();
-    setZones(data.map((z) => ({ id: z.id, label: z.label, rows: z.rows, cols: z.cols, version: z.version })));
+    setZones(data);
   }, []);
 
   const refreshContainers = useCallback(async () => {
@@ -94,8 +97,11 @@ export function useYardState(enabled) {
   }, []);
 
   const refreshMovements = useCallback(async () => {
-    const data = await api.getMovements(50);
-    setMovements(data);
+    const [moves, operations] = await Promise.all([
+      api.getMovements(20, 'moves'),
+      api.getMovements(50, 'operations'),
+    ]);
+    setMovements([...moves, ...operations].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
     setMovementsStamp((s) => s + 1);
   }, []);
 
@@ -261,8 +267,8 @@ export function useYardState(enabled) {
         return false;
       }
       try {
-        await api.containerDeparture(ct._dbId, ct.version);
-        showToast('success', `Départ : ${containerId} retiré de ${posLabel(ct.zone, ct.row, ct.col)}.`);
+        await api.opsWrite('tasks', { kind: 'DEPARTURE', containerId: ct._dbId });
+        showToast('success', `Sortie demandée pour ${containerId}. À confirmer dans Opérations → Tâches terrain.`);
         await Promise.all([refreshContainers(), refreshMovements()]);
         return true;
       } catch (err) {
@@ -282,10 +288,10 @@ export function useYardState(enabled) {
       }
       try {
         const fromPos = posLabel(ct.zone, ct.row, ct.col);
-        const updated = await api.containerTransfer(ct._dbId, targetZoneId, ct.version);
+        const updated = await api.opsWrite('tasks', { kind: 'MOVE', containerId: ct._dbId, targetZoneId });
         showToast(
           'success',
-          `Transfert : ${containerId} de ${fromPos} → ${posLabel(updated.zoneId, updated.row, updated.col)}.`,
+          `Transfert demandé : ${containerId} de ${fromPos} → ${posLabel(updated.targetZoneId, updated.targetRow, updated.targetCol)}. À confirmer dans Opérations.`,
         );
         await Promise.all([refreshContainers(), refreshMovements()]);
         return true;
@@ -302,9 +308,9 @@ export function useYardState(enabled) {
   const executeMove = useCallback(
     async (ct, fromZone, fromRow, fromCol, toZone, toRow, toCol, addToHistory) => {
       try {
-        await api.containerMove(ct._dbId, toZone, toRow, toCol, ct.version);
+        await api.opsWrite('tasks', { kind: 'MOVE', containerId: ct._dbId, targetZoneId: toZone, targetRow: toRow, targetCol: toCol });
         if (addToHistory) {
-          showToast('success', `${ct.id} déplacé de ${posLabel(fromZone, fromRow, fromCol)} → ${posLabel(toZone, toRow, toCol)}`);
+          showToast('success', `${ct.id} : tâche de déplacement demandée vers ${posLabel(toZone, toRow, toCol)}. À confirmer dans Opérations.`);
         }
         await Promise.all([refreshContainers(), refreshMovements()]);
       } catch (err) {
@@ -338,8 +344,8 @@ export function useYardState(enabled) {
       const move = moveHistory[index];
       if (!move) return;
       try {
-        await api.undoMovement(move.id);
-        showToast('info', `Mouvement annulé : ${move.ct.id} retourné à ${posLabel(move.fromZone, move.fromRow, move.fromCol)}`);
+        await api.opsWrite('tasks', {kind:'MOVE',containerId:move.ct._dbId,targetZoneId:move.fromZone,targetRow:move.fromRow,targetCol:move.fromCol,reason:'Demande de retour depuis l’historique'});
+        showToast('info', `Retour demandé pour ${move.ct.id} vers ${posLabel(move.fromZone, move.fromRow, move.fromCol)}. À confirmer dans les tâches terrain.`);
         await Promise.all([refreshContainers(), refreshMovements()]);
       } catch (err) {
         handleError(err);
@@ -421,7 +427,7 @@ export function useYardState(enabled) {
   // ============ STATS ============
 
   const totalContainers = allContainers.length;
-  const totalSlots = zones.reduce((s, z) => s + z.rows * z.cols * MAX_TIER, 0);
+  const totalSlots = zones.reduce((s, z) => s + (z.rows * z.cols - (z.blockedSlots?.length || 0)) * (z.maxTier ?? MAX_TIER), 0);
   const occupancy = totalSlots > 0 ? Math.round((totalContainers / totalSlots) * 100) : 0;
   const reeferCount = allContainers.filter((c) => c.type.includes('reefer')).length;
   let multiStacks = 0;
@@ -437,6 +443,7 @@ export function useYardState(enabled) {
   });
 
   return {
+    refreshAll,
     stacks, allContainers, zones, loading,
     moveHistory, movementLog,
     activeFilter, setActiveFilter,

@@ -157,13 +157,12 @@ export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, sear
     <>
       <div className="yard-container">
         {visibleZones.map(zone => (
-          <div key={zone.id} style={{ marginBottom: 28 }}>
-            <div style={{
-              fontSize: 12, fontWeight: 700, color: 'var(--text-dim)',
-              marginBottom: 10, fontFamily: '"JetBrains Mono", monospace', letterSpacing: 0.5
-            }}>
-              {zone.label}
+          <section key={zone.id} className="yard-zone" aria-label={zone.label}>
+            <div className="yard-zone-heading">
+              <h3><span className="zone-letter">{zone.id}</span>{zone.label}</h3>
+              <span>{(stacks[zone.id] || []).flat().reduce((n, stack) => n + stack.length, 0)} conteneurs · {zone.rows * zone.cols} emplacements</span>
             </div>
+            <div className="yard-zone-grid">
             <div className="yard-grid-labels">
               {Array.from({ length: zone.cols }, (_, c) => (
                 <div key={c} className="yard-col-label">Bay {String(c + 1).padStart(2, '0')}</div>
@@ -183,6 +182,8 @@ export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, sear
                         className={isHovered ? 'yard-cell-wrapper drop-hover-wrapper' : ''}
                       >
                         <YardCell
+                          blocked={zone.blockedSlots?.some(s=>s.row===r&&s.col===c)}
+                          maxTier={zone.maxTier}
                           stack={cellStack}
                           zone={zone.id}
                           row={r}
@@ -203,7 +204,8 @@ export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, sear
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          </section>
         ))}
       </div>
       <div className="drag-ghost" ref={ghostRef} id="dragGhost"></div>

@@ -79,6 +79,8 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
 }
 
 export const api = {
+  opsGet: (path, params) => request(`/operations/${path}${toQuery(params)}`),
+  opsWrite: (path, body, method = 'POST') => request(`/operations/${path}`, { method, body }),
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   me: () => request('/auth/me'),
   wsTicket: () => request('/ws-ticket', { method: 'POST' }),
@@ -102,6 +104,6 @@ export const api = {
     request(`/containers/${id}/move`, { method: 'POST', body: { toZoneId, toRow, toCol, expectedVersion } }),
   updateReefer: (id, data) => request(`/containers/${id}/reefer`, { method: 'PATCH', body: data }),
 
-  getMovements: (take) => request(`/movements${toQuery({ take })}`),
+  getMovements: (take, scope) => request(`/movements${toQuery({ take, scope })}`),
   undoMovement: (id) => request(`/movements/${id}/undo`, { method: 'POST' }),
 };

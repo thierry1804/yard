@@ -18,7 +18,7 @@ export default function Dashboard({ zones, stacks, allContainers, onClose }) {
   const zoneOccupancy = useMemo(() => {
     return zones.map(z => {
       let count = 0;
-      const total = z.rows * z.cols * MAX_TIER;
+      const total = (z.rows * z.cols - (z.blockedSlots?.length || 0)) * (z.maxTier ?? MAX_TIER);
       for (let r = 0; r < z.rows; r++)
         for (let c = 0; c < z.cols; c++)
           count += (stacks[z.id]?.[r]?.[c]?.length || 0);

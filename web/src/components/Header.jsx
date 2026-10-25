@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export default function Header({ user, connectionStatus, onLogout, onOpenZoneManager, onOpenMovementManager, onOpenDashboard, onOpenReeferMonitor }) {
+export default function Header({ user, connectionStatus, onLogout, onOpenZoneManager, onOpenMovementManager, onOpenDashboard, onOpenReeferMonitor, onOpenOperations }) {
   const [time, setTime] = useState('');
 
   useEffect(() => {
@@ -28,22 +28,23 @@ export default function Header({ user, connectionStatus, onLogout, onOpenZoneMan
         </div>
       </div>
       <div className="header-right">
+        <button className="header-action-btn" onClick={onOpenOperations}>Opérations</button>
         <button className="header-action-btn" onClick={onOpenDashboard}>
           <span className="header-action-icon">▦</span>
-          Dashboard
+          Tableau de bord
         </button>
         <button className="header-action-btn" onClick={onOpenReeferMonitor}>
           <span className="header-action-icon">❄</span>
           Reefers
         </button>
-        <button className="header-action-btn" onClick={onOpenMovementManager}>
+        {user?.role !== 'VIEWER' && <button className="header-action-btn" onClick={onOpenMovementManager}>
           <span className="header-action-icon">↕</span>
           Mouvements
-        </button>
-        <button className="header-action-btn header-action-secondary" onClick={onOpenZoneManager}>
+        </button>}
+        {user?.role === 'ADMIN' && <button className="header-action-btn header-action-secondary" onClick={onOpenZoneManager}>
           <span className="header-action-icon">⊞</span>
           Zones
-        </button>
+        </button>}
         <div className={`live-badge${badge.cls}`}><div className="live-dot"></div> {badge.label}</div>
         <div className="timestamp">{time}</div>
         {user && (

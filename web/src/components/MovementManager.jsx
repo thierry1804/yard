@@ -233,10 +233,10 @@ function DepartureForm({ allContainers, stacks, containerDeparture }) {
     : [];
 
   const handleDepart = async (ct) => {
-    if (window.confirm(`Confirmer le départ de ${ct.id} ?`)) {
+    if (window.confirm(`Demander une tâche de sortie pour ${ct.id} ?`)) {
       const ok = await containerDeparture(ct.id);
       if (ok) {
-        setResult({ ok: true, msg: `${ct.id} sorti du yard.` });
+        setResult({ ok: true, msg: `Sortie demandée pour ${ct.id}. Confirmation dans Opérations → Tâches terrain.` });
         setSearch('');
       } else {
         setResult({ ok: false, msg: `Echec : le conteneur n'est probablement pas au sommet de sa pile.` });
@@ -246,7 +246,7 @@ function DepartureForm({ allContainers, stacks, containerDeparture }) {
 
   return (
     <div className="modal-form">
-      <div className="form-section-title">Enregistrer un départ</div>
+      <div className="form-section-title">Demander une sortie (confirmation dans les tâches terrain)</div>
       <div className="form-field">
         <label>Rechercher le conteneur</label>
         <input
@@ -313,7 +313,7 @@ function TransferForm({ zones, allContainers, stacks, containerTransfer }) {
     }
     const ok = await containerTransfer(ct.id, targetZone);
     if (ok) {
-      setResult({ ok: true, msg: `${ct.id} transféré vers zone ${targetZone}.` });
+      setResult({ ok: true, msg: `Transfert demandé pour ${ct.id} vers ${targetZone}. Confirmation dans Opérations → Tâches terrain.` });
       setSearch('');
     } else {
       setResult({ ok: false, msg: 'Echec du transfert.' });

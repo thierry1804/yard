@@ -1,4 +1,4 @@
-import { TYPES, TYPE_LABELS } from '../data/config';
+import { TYPES } from '../data/config';
 import { posLabel } from '../data/generateData';
 
 const FILTER_COLORS = {
@@ -12,7 +12,7 @@ const FILTER_COLORS = {
 };
 
 const FILTER_LABELS = {
-  all: 'Tous',
+  all: 'Tous les conteneurs',
   'empty-20': "Vide · 20'",
   'empty-40': "Vide · 40'",
   'full-20': "Plein · 20'",
@@ -21,8 +21,11 @@ const FILTER_LABELS = {
   'reefer-full': 'Reefer · Plein',
 };
 
-export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQuery, setSearchQuery, moveHistory, undoMove, onSelectEntry }) {
+export default function Sidebar({ containers, onLocate, stats, activeFilter, setActiveFilter, searchQuery, setSearchQuery, moveHistory, undoMove, onSelectEntry }) {
   const filters = ['all', ...TYPES];
+  const query = searchQuery.trim().toUpperCase();
+  const matches = query.length >= 3 ? containers.filter(ct => ct.id.toUpperCase().includes(query)) : [];
+
 
   return (
     <div className="sidebar">
@@ -32,19 +35,28 @@ export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQu
           <span className="search-icon">⌕</span>
           <input
             type="text"
-            placeholder="Ex: MSCU1234567"
+            aria-label="Rechercher un conteneur"
+            placeholder="N° de conteneur…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
+        {query.length >= 3 && <div className="search-results">
+          <p role="status">{matches.length ? `${matches.length} résultat(s) dans le parc` : 'Aucun conteneur trouvé.'}</p>
+          {matches.slice(0, 20).map(ct => <button key={ct._dbId ?? ct.id} onClick={() => onLocate(ct)}>
+            <strong>{ct.id}</strong><span>{posLabel(ct.zone, ct.row, ct.col)} · Niveau {ct.tier}</span><span className="search-locate">Localiser →</span>
+          </button>)}
+          {matches.length > 20 && <p>Affinez la recherche pour voir les autres résultats.</p>}
+        </div>}
       </div>
 
       <div className="sidebar-section">
-        <h3>Filtres</h3>
+        <h3>Type de conteneur</h3>
         <div className="filter-group">
           {filters.map(f => (
             <button
               key={f}
+              aria-pressed={activeFilter === f}
               className={`filter-btn${activeFilter === f ? ' active' : ''}`}
               onClick={() => setActiveFilter(f)}
             >
@@ -55,16 +67,6 @@ export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQu
               </span>
             </button>
           ))}
-        </div>
-      </div>
-
-      <div className="sidebar-section">
-        <h3>Statistiques</h3>
-        <div className="stats-grid">
-          <div className="stat-card"><div className="stat-value">{stats.totalContainers}</div><div className="stat-label">Conteneurs</div></div>
-          <div className="stat-card"><div className="stat-value">{stats.occupancy}%</div><div className="stat-label">Occupation</div></div>
-          <div className="stat-card"><div className="stat-value">{stats.reeferCount}</div><div className="stat-label">Reefers</div></div>
-          <div className="stat-card"><div className="stat-value">{stats.multiStacks}</div><div className="stat-label">Piles ≥ 2</div></div>
         </div>
       </div>
 
@@ -92,7 +94,7 @@ export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQu
                     {posLabel(m.fromZone, m.fromRow, m.fromCol)} → {posLabel(m.toZone, m.toRow, m.toCol)}
                   </div>
                   <span className="move-entry-time">{timeStr}</span>
-                  <button className="move-entry-undo" onClick={(e) => { e.stopPropagation(); undoMove(i); }}>Annuler</button>
+                  <button className="move-entry-undo" onClick={(e) => { e.stopPropagation(); undoMove(i); }}>Demander retour</button>
                 </div>
               );
             })

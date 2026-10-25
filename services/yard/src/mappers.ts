@@ -2,7 +2,7 @@ import type { Container, Movement, Zone } from './generated/prisma';
 import type { ContainerWithReefer } from './yard-service';
 
 export function toApiZone(z: Zone) {
-  return { id: z.id, label: z.label, rows: z.rows, cols: z.cols, version: z.version };
+  return { id: z.id, label: z.label, rows: z.rows, cols: z.cols, version: z.version, maxTier: z.maxTier, blockedSlots: z.blockedSlots, allowedTypes: z.allowedTypes, reeferOnly: z.reeferOnly, reeferPlugs: z.reeferPlugs, maxWeightKg: z.maxWeightKg };
 }
 
 export function toApiContainer(c: ContainerWithReefer) {
@@ -12,6 +12,9 @@ export function toApiContainer(c: ContainerWithReefer) {
     type: c.type,
     isoCode: c.isoCode,
     client: c.client,
+    releaseReference: c.releaseReference,
+    releaseRequired: c.releaseRequired,
+    clientHoldReason: c.clientHoldReason,
     weightKg: c.weightKg,
     zoneId: c.zoneId,
     row: c.row,

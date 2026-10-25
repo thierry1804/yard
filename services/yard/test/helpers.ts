@@ -7,7 +7,7 @@ export const prisma = new PrismaClient({ datasourceUrl: inject('databaseUrl') })
 export const operator: Ctx = { actor: { userId: 'u-op', role: 'OPERATOR' }, correlationId: 'corr-test' };
 
 export async function resetDb(): Promise<void> {
-  await prisma.$executeRawUnsafe('TRUNCATE "Movement", "ReeferState", "Container", "Zone", outbox CASCADE');
+  await prisma.$executeRawUnsafe('TRUNCATE "AuditEvent", "WorkTask", "OperationRecord", "Movement", "ReeferState", "Container", "Zone", outbox CASCADE');
 }
 
 export async function outboxTypes(): Promise<string[]> {

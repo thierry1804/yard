@@ -1,6 +1,6 @@
 # CCIS Yard View
 
-Prototype d’interface de visualisation et de gestion du dépôt (yard) pour **CEVA Logistics — Dépôt Toamasina**. Vue plan du yard avec zones, conteneurs, drag & drop, mouvements et gestion des zones.
+Application de visualisation et de gestion des opérations du dépôt (yard) pour **CEVA Logistics — Dépôt Toamasina**. Vue plan du yard avec zones, conteneurs, drag & drop, mouvements et gestion des zones.
 
 ## Architecture
 
@@ -44,7 +44,17 @@ sh infra/scripts/smoke-broker-down.sh  # RabbitMQ arrêté : aucune perte
 
 ---
 
-## Fonctionnalités du prototype
+## Espace Opérations
+
+Le bouton **Opérations** donne accès à l'inventaire avec exports et vues enregistrées, aux sorties prévues et autorisations, aux tâches terrain, aux propositions de réorganisation, aux passages et rendez-vous camions, aux inspections/réparations, aux contrôles physiques, au suivi reefer, au journal/audit, aux imports JSON/CSV et aux règles de stockage.
+
+Les demandes de déplacement ne changent plus les positions physiques : l'opérateur confirme leur exécution dans les tâches terrain. La réorganisation produit des propositions à valider. Les sorties sont contrôlées côté serveur selon les blocages et autorisations.
+
+Voir le [guide des opérations](docs/product/operations-guide.md) pour les parcours, les règles, le déploiement et les limites actuelles. CargoWise, EDI et capteurs ne sont pas configurés.
+
+## Plan du parc et fonctions historiques
+
+
 
 ### Plan du yard
 
@@ -76,7 +86,7 @@ sh infra/scripts/smoke-broker-down.sh  # RabbitMQ arrêté : aucune perte
 ### Historique des mouvements (sidebar)
 
 - Liste des derniers déplacements par drag & drop (position d’origine → position cible, heure).
-- **Annuler** : bouton par mouvement pour remettre le conteneur à sa position d’origine (si toujours possible : sommet de pile, place libre, règle 40'/20').
+- **Demander retour** : crée une tâche de déplacement inverse, à confirmer sur le terrain selon les règles actuelles.
 
 ### Clic droit — Vue pile
 
@@ -106,7 +116,7 @@ sh infra/scripts/smoke-broker-down.sh  # RabbitMQ arrêté : aucune perte
 
 ### Compaction
 
-- **Compacter [zone]** (si une zone est sélectionnée) ou **Compacter tout** : réorganisation des conteneurs dans la zone / tout le yard pour combler les trous (40' puis 20', tri par date de sortie). Les mouvements par drag & drop ne sont pas rejoués ; l’historique « Historique des mouvements » est réinitialisé pour les compactions.
+- **Réorganiser [zone]** ou **Réorganiser le parc** : calcul d’une proposition puis validation administrateur et création de tâches ordonnées. Les positions changent seulement à la confirmation terrain. L’historique reste conservé.
 
 ### Notifications (toasts)
 

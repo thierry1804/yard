@@ -69,3 +69,26 @@ describe('GET /containers/:id/history', () => {
     expect((await app.inject({ url: '/containers/TCLU0000000/history' })).statusCode).toBe(401);
   });
 });
+
+describe('movement lists after compaction', () => {
+  it('keeps older manual moves and operations visible beyond a full page of compact events', async () => {
+    const ct = await post('/containers/arrival', op, { type: 'FULL_20', zoneId: 'A', row: 0, col: 0 });
+    await post(`/containers/${ct.id}/move`, op, { toZoneId: 'A', toRow: 1, toCol: 1 });
+    const before = (await app.inject({ url: '/movements?scope=moves&take=20', headers: viewer })).json();
+    expect(before).toHaveLength(1);
+    const afterTime = new Date(Date.now() + 1000);
+    await prisma.movement.createMany({ data: Array.from({ length: 60 }, () => ({
+      type: 'COMPACT' as const, containerId: ct.id, userId: 'u-op', createdAt: afterTime,
+      fromZoneId: 'A', fromRow: 1, fromCol: 1, fromTier: 1,
+      toZoneId: 'A', toRow: 0, toCol: 0, toTier: 1,
+    })) });
+    const recent = (await app.inject({ url: '/movements?take=50', headers: viewer })).json();
+    expect(recent.every((m: { type: string }) => m.type === 'COMPACT')).toBe(true);
+    const moves = (await app.inject({ url: '/movements?scope=moves&take=20', headers: viewer })).json();
+    expect(moves.map((m: { id: string }) => m.id)).toEqual(before.map((m: { id: string }) => m.id));
+    const operations = (await app.inject({ url: '/movements?scope=operations&take=50', headers: viewer })).json();
+    expect(operations).toHaveLength(1);
+    expect(operations[0].type).toBe('ARRIVAL');
+    expect((await app.inject({ url: '/movements?scope=invalid', headers: viewer })).statusCode).toBe(400);
+  });
+});

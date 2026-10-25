@@ -92,11 +92,11 @@ describe('zones, compaction and movements', () => {
     expect((await app.inject({ url: '/zones', headers: as('VIEWER') })).json()).toEqual([]);
   });
 
-  it('compact routes return counts; compact-all is not taken as a zone id', async () => {
-    await arrive({ row: 1, col: 1 });
-    expect((await app.inject({ method: 'POST', url: '/zones/A/compact', headers: as('OPERATOR') })).json()).toEqual({ count: 1 });
-    // Already compact: counts report containers actually moved.
-    expect((await app.inject({ method: 'POST', url: '/zones/compact-all', headers: as('OPERATOR') })).json()).toEqual({ total: 0 });
+  it('legacy compact endpoints cannot modify the physical inventory', async () => {
+    const ct = (await arrive({ row: 1, col: 1 })).json();
+    expect((await app.inject({ method: 'POST', url: '/zones/A/compact', headers: as('OPERATOR') })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'POST', url: '/zones/compact-all', headers: as('OPERATOR') })).statusCode).toBe(409);
+    expect((await app.inject({ url: `/containers/${ct.id}`, headers: as('VIEWER') })).json()).toMatchObject({ row: 1, col: 1 });
   });
 
   it('movements list with embedded container, newest first, and undo', async () => {

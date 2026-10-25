@@ -2,7 +2,7 @@ import { useRef, useCallback, useEffect } from 'react';
 import { MAX_TIER } from '../data/config';
 import { canStack } from '../data/rules';
 
-export default function YardCell({ stack, zone, row, col, activeFilter, searchQuery, onDragStart, dragData, onShowTooltip, onHideTooltip, onContextMenu, justMoved, focused }) {
+export default function YardCell({ stack, zone, row, col, activeFilter, searchQuery, onDragStart, dragData, onShowTooltip, onHideTooltip, onContextMenu, justMoved, focused, blocked = false, maxTier = MAX_TIER }) {
   const cellRef = useRef(null);
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export default function YardCell({ stack, zone, row, col, activeFilter, searchQu
   // Determine classes
   let className = 'yard-cell';
   if (isEmpty) {
-    className += ' empty-slot';
+    className += blocked ? ' empty-slot blocked-slot' : ' empty-slot';
   } else {
     className += ' has-stack type-' + topCt.type;
   }
@@ -39,7 +39,7 @@ export default function YardCell({ stack, zone, row, col, activeFilter, searchQu
 
   const isDragActive = dragData && !isSource;
   if (isDragActive) {
-    if (stack.length < MAX_TIER && canStack(dragData.ct.type, stack)) {
+    if (!blocked && stack.length < maxTier && canStack(dragData.ct.type, stack)) {
       className += ' drop-valid';
     } else {
       className += ' drop-invalid';
@@ -49,12 +49,31 @@ export default function YardCell({ stack, zone, row, col, activeFilter, searchQu
   if (justMoved) className += ' just-moved';
   if (focused) className += ' focused';
 
+  const pendingDrag = useRef(null);
+  const movedPointer = useRef(false);
+  useEffect(() => () => pendingDrag.current?.(), []);
   const handleMouseDown = useCallback((e) => {
-    if (!isEmpty) {
-      e.preventDefault();
-      onDragStart(e, zone, row, col);
-    }
-  }, [isEmpty, onDragStart, zone, row, col]);
+    if (isEmpty || e.button !== 0) return;
+    movedPointer.current = false;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const cleanup = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', cleanup);
+      pendingDrag.current = null;
+    };
+    const move = (event) => {
+      if (Math.hypot(event.clientX - startX, event.clientY - startY) < 8) return;
+      movedPointer.current = true;
+      cleanup();
+      onHideTooltip();
+      onDragStart(event, zone, row, col);
+    };
+    pendingDrag.current?.();
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', cleanup);
+    pendingDrag.current = cleanup;
+  }, [isEmpty, onDragStart, onHideTooltip, zone, row, col]);
 
   const handleMouseEnter = useCallback((e) => {
     if (dragData) {
@@ -85,6 +104,10 @@ export default function YardCell({ stack, zone, row, col, activeFilter, searchQu
     <div
       ref={cellRef}
       className={className}
+      role={isEmpty ? undefined : 'button'}
+      tabIndex={isEmpty ? undefined : 0}
+      aria-label={`${zone}, rangée ${row + 1}, baie ${col + 1} : ${isEmpty ? (blocked ? 'condamné' : 'libre') : `${stack.length} conteneur(s), sommet ${topCt.id}`}`}
+      onKeyDown={(e) => { if (!isEmpty && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onContextMenu(zone, row, col); } }}
       data-zone={zone}
       data-row={row}
       data-col={col}
@@ -92,16 +115,18 @@ export default function YardCell({ stack, zone, row, col, activeFilter, searchQu
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
-      onDoubleClick={handleDoubleClick}
+      onClick={() => { if (!movedPointer.current) handleDoubleClick(); }}
     >
+      {isEmpty && blocked && <span aria-hidden="true">×</span>}
       {!isEmpty && (
         <>
           <div className="cell-top-line">
             <span>{topCt.type.includes('20') ? "20'" : "40'"}</span>
             {topCt.type.includes('reefer') && <span className="cell-reefer-icon">❄</span>}
           </div>
+          <div className="cell-id">{topCt.id}</div>
           <div className="tier-indicator">
-            {Array.from({ length: MAX_TIER }, (_, t) => {
+            {Array.from({ length: maxTier }, (_, t) => {
               const filled = t < stack.length;
               const color = filled
                 ? (stack[t].type.includes('reefer') ? 'var(--reefer)' : stack[t].type.includes('full') ? 'var(--full-20)' : 'var(--empty-20)')

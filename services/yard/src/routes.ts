@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { containerTypeSchema } from '@ccis/contracts';
 import { actorOf, requireRole } from '@ccis/service-kit';
 import { toApiContainer, toApiHistory, toApiMovement, toApiZone } from './mappers';
+import { registerOperationsRoutes } from './operations-routes';
+import { errors } from '@ccis/service-kit';
 import type { Ctx, YardService } from './yard-service';
 
 const version = z.number().int().positive().optional();
@@ -35,7 +37,7 @@ const reefer = z.object({
   expectedVersion: version,
 });
 const containerQuery = z.object({ zoneId: zoneId.optional(), type: containerTypeSchema.optional(), q: z.string().optional() });
-const movementsQuery = z.object({ take: z.coerce.number().int().min(1).max(500).default(50) });
+const movementsQuery = z.object({ take: z.coerce.number().int().min(1).max(500).default(50), scope: z.enum(['moves', 'operations']).optional() });
 const idParam = z.object({ id: z.string() });
 const zoneParam = z.object({ id: zoneId });
 
@@ -48,6 +50,7 @@ function ctx(req: FastifyRequest): Ctx {
 }
 
 export function registerRoutes(app: FastifyInstance, svc: YardService): void {
+  registerOperationsRoutes(app, svc.operations);
   // ----- zones -----
   app.get('/zones', viewer, async () => (await svc.listZones()).map(toApiZone));
 
@@ -68,9 +71,9 @@ export function registerRoutes(app: FastifyInstance, svc: YardService): void {
   });
 
   // Static path: Fastify's router prefers it over /zones/:id/compact.
-  app.post('/zones/compact-all', operator, async (req) => ({ total: await svc.compactAll(ctx(req)) }));
+  app.post('/zones/compact-all', operator, async () => { throw errors.ruleViolation('Utilisez une proposition de réorganisation et sa validation dans Opérations.'); });
 
-  app.post('/zones/:id/compact', operator, async (req) => ({ count: await svc.compactZone(zoneParam.parse(req.params).id, ctx(req)) }));
+  app.post('/zones/:id/compact', operator, async () => { throw errors.ruleViolation('Utilisez une proposition de réorganisation et sa validation dans Opérations.'); });
 
   // ----- containers -----
   app.get('/containers', viewer, async (req) => (await svc.listContainers(containerQuery.parse(req.query))).map(toApiContainer));
@@ -102,7 +105,10 @@ export function registerRoutes(app: FastifyInstance, svc: YardService): void {
   );
 
   // ----- movements -----
-  app.get('/movements', viewer, async (req) => (await svc.listMovements(movementsQuery.parse(req.query).take)).map(toApiMovement));
+  app.get('/movements', viewer, async (req) => {
+    const { take, scope } = movementsQuery.parse(req.query);
+    return (await svc.listMovements(take, scope)).map(toApiMovement);
+  });
 
   app.post('/movements/:id/undo', operator, async (req) => toApiContainer(await svc.undoMovement(idParam.parse(req.params).id, ctx(req))));
 }

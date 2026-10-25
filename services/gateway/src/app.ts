@@ -72,7 +72,7 @@ export async function buildGatewayApp(deps: GatewayDeps): Promise<FastifyInstanc
 
   // ----- yard -----
   const yard = forwardTo(deps.services.yard);
-  for (const prefix of ['/zones', '/containers', '/movements']) {
+  for (const prefix of ['/zones', '/containers', '/movements', '/operations']) {
     app.route({ method: [...METHODS], url: prefix, handler: yard });
     app.route({ method: [...METHODS], url: `${prefix}/*`, handler: yard });
   }

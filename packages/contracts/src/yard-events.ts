@@ -43,11 +43,12 @@ const relocationSchema = z.object({
 });
 
 export const yardEventSchemas = {
+  'yard.operations.changed': z.object({ kind: z.string(), entityId: z.string(), action: z.string() }),
   'yard.container.arrived': z.object({ container: containerSnapshotSchema }),
   'yard.container.departed': z.object({ container: containerSnapshotSchema, from: positionSchema }),
   'yard.container.moved': relocationSchema,
   'yard.container.transferred': relocationSchema,
-  'yard.container.relocated': relocationSchema.extend({ reason: z.enum(['COMPACT', 'UNDO']) }),
+  'yard.container.relocated': relocationSchema.extend({ reason: z.enum(['COMPACT', 'UNDO', 'CORRECTION']) }),
   'yard.zone.created': z.object({ zone: zoneSchema }),
   'yard.zone.updated': z.object({ zone: zoneSchema }),
   'yard.zone.deleted': z.object({ zoneId: z.string() }),

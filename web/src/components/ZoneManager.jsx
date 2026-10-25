@@ -56,8 +56,8 @@ export default function ZoneManager({ zones, stacks, onClose, addZone, editZone,
             <div className="zone-list">
               {zones.map(zone => {
                 const count = getContainerCount(zone.id, zone);
-                const capacity = zone.rows * zone.cols * 3;
-                const pct = Math.round(count / capacity * 100);
+                const capacity = (zone.rows * zone.cols - (zone.blockedSlots?.length || 0)) * (zone.maxTier ?? 3);
+                const pct = capacity ? Math.round(count / capacity * 100) : 0;
                 return (
                   <div key={zone.id} className="zone-list-item">
                     <div className="zone-list-id">{zone.id}</div>

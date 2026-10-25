@@ -5,6 +5,7 @@ const LABELS = {
   DEPARTURE: { label: 'Départ (gate-out)', icon: '↑' },
   MOVE: { label: 'Déplacement', icon: '↔' },
   TRANSFER: { label: 'Transfert de zone', icon: '⇄' },
+  CORRECTION: { label: 'Correction d’inventaire', icon: '✓' },
   COMPACT: { label: 'Compactage', icon: '⧉' },
 };
 

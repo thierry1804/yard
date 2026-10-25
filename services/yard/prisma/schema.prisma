@@ -34,6 +34,7 @@ enum MovementType {
   TRANSFER
   MOVE
   COMPACT
+  CORRECTION
 }
 
 model Zone {
@@ -43,6 +44,12 @@ model Zone {
   cols      Int
   version   Int      @default(1)
   createdAt DateTime @default(now())
+  maxTier Int @default(3)
+  allowedTypes String[] @default([])
+  blockedSlots Json @default("[]")
+  maxWeightKg Int?
+  reeferOnly Boolean @default(false)
+  reeferPlugs Int?
 }
 
 // zoneId is not a foreign key: departed containers keep their last position
@@ -70,6 +77,11 @@ model Container {
   version         Int             @default(1)
   reefer          ReeferState?
   movements       Movement[]
+  tasks WorkTask[]
+  records OperationRecord[]
+  releaseReference String?
+  releaseRequired Boolean @default(false)
+  clientHoldReason String?
 
   @@index([zoneId, row, col])
   @@index([containerNo])
@@ -125,4 +137,56 @@ model OutboxMessage {
 
   @@index([publishedAt, createdAt])
   @@map("outbox")
+}
+
+
+model WorkTask {
+  id String @id @default(uuid()) @db.Uuid
+  containerId String @db.Uuid
+  container Container @relation(fields: [containerId], references: [id])
+  kind String
+  state String @default("REQUESTED")
+  priority Int @default(2)
+  assignee String?
+  equipment String?
+  reason String?
+  groupId String?
+  sourceVersion Int
+  sourceZoneId String
+  sourceRow Int
+  sourceCol Int
+  sourceTier Int
+  targetZoneId String?
+  targetRow Int?
+  targetCol Int?
+  dueAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([state, createdAt])
+}
+
+model OperationRecord {
+  id String @id @default(uuid()) @db.Uuid
+  kind String
+  status String
+  containerId String? @db.Uuid
+  container Container? @relation(fields: [containerId], references: [id])
+  data Json
+  version Int @default(1)
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([kind, createdAt])
+}
+
+model AuditEvent {
+  id String @id @default(uuid()) @db.Uuid
+  entityId String
+  kind String
+  action String
+  actor String
+  data Json
+  createdAt DateTime @default(now())
+  @@index([createdAt, id])
 }

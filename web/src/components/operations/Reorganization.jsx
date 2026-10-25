@@ -1,0 +1,14 @@
+import { useState } from 'react';
+import { api } from '../../api/client';
+import { Badge, DataState, Empty, Field, position, useOps } from './shared';
+export default function Reorganization({zones,stamp,action,isAdmin,canWrite,initialZone}) {
+  const [zone,setZone]=useState(initialZone==='all'?'':initialZone); const [proposal,setProposal]=useState(null); const [checked,setChecked]=useState(false);
+  const state=useOps('records',{kind:'REORGANIZATION'},stamp);
+  const preview=async()=>action(async()=>{const r=await api.opsWrite('reorganization',{zoneId:zone||undefined});setProposal(r);setChecked(false);});
+  return <><p className="ops-intro">La proposition déplace uniquement des conteneurs accessibles vers des emplacements compatibles. Elle conserve les positions réelles jusqu’à la confirmation de chaque tâche. L’algorithme est une aide au rangement, à valider selon les contraintes du terrain.</p>
+  {canWrite&&<div className="ops-toolbar"><Field label="Périmètre">{id=><select id={id} value={zone} onChange={e=>setZone(e.target.value)}><option value="">Toutes les zones</option>{zones.map(z=><option key={z.id}>{z.id}</option>)}</select>}</Field><button onClick={preview}>Calculer une proposition</button></div>}
+  {proposal&&<section className="ops-card"><h3>Proposition · {proposal.data.steps.length} manutentions</h3><p>Aucun déplacement n’a encore été exécuté. Les étapes devront être confirmées dans cet ordre.</p><div className="ops-table-wrap"><table><thead><tr><th>Étape</th><th>Conteneur</th><th>Position actuelle</th><th>Destination proposée</th></tr></thead><tbody>{proposal.data.steps.map((s,i)=><tr key={s.containerId}><td>{i+1}</td><td>{s.containerNo}</td><td>{position({zoneId:s.fromZoneId,row:s.fromRow,col:s.fromCol,tier:s.fromTier})}</td><td>{position({zoneId:s.targetZoneId,row:s.targetRow,col:s.targetCol,tier:s.targetTier})}</td></tr>)}</tbody></table></div>
+  {isAdmin&&proposal.status==='PROPOSED'&&proposal.data.steps.length>0&&<><label className="ops-check"><input type="checkbox" checked={checked} onChange={e=>setChecked(e.target.checked)}/>J’ai vérifié les destinations et l’ordre des manutentions.</label><button disabled={!checked} onClick={async()=>{const ok=await action(()=>api.opsWrite(`reorganization/${proposal.id}/approve`,{}));if(ok)setProposal(null);}}>Valider et créer les tâches</button></>}{!isAdmin&&<p>La validation est réservée au superviseur.</p>}</section>}
+  <h3>Propositions enregistrées</h3><DataState state={state}>{!(state.data||[]).length?<Empty/>:<div className="ops-list">{state.data.map(r=><button className="ops-record" key={r.id} onClick={()=>{setProposal(r);setChecked(false);}}><strong>{r.data.scope==='all'?'Toutes les zones':`Zone ${r.data.scope}`} · {r.data.steps.length} manutentions</strong><Badge state={r.status}/></button>)}</div>}</DataState>
+  </>;
+}

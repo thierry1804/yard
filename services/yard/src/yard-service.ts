@@ -3,6 +3,8 @@ import { errors } from '@ccis/service-kit';
 import { Prisma, type Container, type Movement, type PrismaClient, type ReeferState, type Zone } from './generated/prisma';
 import { emit, positionOf, snapshot } from './events';
 import { lockSlots, lockZones } from './locks';
+import { storageError, assertRelease } from './storage-policy';
+import { OperationsService } from './operations-service';
 import {
   CONTAINER_NO_RE, ISO_CODES, ZONE_ID_RE, isReefer, normalizeContainerNo, placementError, planCompaction, posLabel, zoneDimsError,
 } from './domain/rules';
@@ -60,7 +62,10 @@ function isRetryable(err: unknown): boolean {
 }
 
 export class YardService {
-  constructor(private readonly prisma: PrismaClient, private readonly onCommitted: () => void = () => {}) {}
+  readonly operations: OperationsService;
+  constructor(private readonly prisma: PrismaClient, private readonly onCommitted: () => void = () => {}) {
+    this.operations = new OperationsService(prisma, this, onCommitted);
+  }
 
   // ---------- infrastructure ----------
 
@@ -139,8 +144,13 @@ export class YardService {
       throw errors.validation(`Position ${posLabel(zone.id, row, col)} hors de la zone ${zone.id}.`);
     }
     const stack = (await this.stackAt(tx, zone.id, row, col)).filter((c) => c.id !== ignoreId);
-    const reason = placementError(stack, type);
+    const ctWeight = ignoreId ? (await tx.container.findUnique({ where: { id: ignoreId } }))?.weightKg : undefined;
+    const reason = storageError(zone, row, col, type, stack, ctWeight) || placementError(stack, type);
     if (reason) throw errors.ruleViolation(`${reason} (${posLabel(zone.id, row, col)}).`);
+    if (type.includes('REEFER') && zone.reeferPlugs != null) {
+      const used = await tx.container.count({ where: { zoneId: zone.id, status: 'PRESENT', type: { in: ['REEFER', 'REEFER_FULL'] }, ...(ignoreId ? { id: { not: ignoreId } } : {}) } });
+      if (used >= zone.reeferPlugs) throw errors.ruleViolation('Aucune prise reefer disponible dans cette zone.');
+    }
     return stack.length + 1;
   }
 
@@ -149,7 +159,7 @@ export class YardService {
     for (let r = 0; r < zone.rows; r++) {
       for (let c = 0; c < zone.cols; c++) {
         const stack = present.filter((p) => p.row === r && p.col === c);
-        if (!placementError(stack, type)) return { row: r, col: c };
+        if (!storageError(zone, r, c, type, stack) && !placementError(stack, type)) return { row: r, col: c };
       }
     }
     return null;
@@ -234,7 +244,8 @@ export class YardService {
         throw errors.ruleViolation(`Impossible de réduire la zone ${id} : ${outside} conteneur(s) hors des nouvelles dimensions.`);
       }
       const label = input.label?.trim() || zone.label;
-      const updated = await tx.zone.update({ where: { id }, data: { label, rows, cols, version: { increment: 1 } } });
+      const blockedSlots = (zone.blockedSlots as {row:number;col:number}[]).filter(s => s.row < rows && s.col < cols);
+      const updated = await tx.zone.update({ where: { id }, data: { label, rows, cols, blockedSlots, version: { increment: 1 } } });
       await emit(tx, ctx, 'yard.zone.updated', { zone: zoneData(updated) }, updated);
       return updated;
     });
@@ -271,10 +282,14 @@ export class YardService {
   }
 
   async arrival(input: ArrivalInput, ctx: Ctx): Promise<ContainerWithReefer> {
+    return this.tx(tx => this.arrivalInTx(tx, input, ctx));
+  }
+
+  async arrivalInTx(tx: Tx, input: ArrivalInput, ctx: Ctx): Promise<ContainerWithReefer> {
     const plannedExitDate = parseOptionalDate(input.plannedExitDate);
-    return this.tx(async (tx) => {
+
       const autoSlot = input.row === undefined || input.col === undefined;
-      await lockZones(tx, [{ zoneId: input.zoneId, mode: autoSlot ? 'exclusive' : 'shared' }]);
+      await lockZones(tx, [{ zoneId: input.zoneId, mode: 'exclusive' }]);
       const zone = await this.getZone(tx, input.zoneId);
 
       const containerNo = input.containerNo ? normalizeContainerNo(input.containerNo) : await this.generateContainerNo(tx);
@@ -294,6 +309,7 @@ export class YardService {
       } else {
         await lockSlots(tx, [{ zoneId: zone.id, row: row!, col: col! }]);
       }
+      if (zone.maxWeightKg != null && input.weightKg != null && input.weightKg > zone.maxWeightKg) throw errors.ruleViolation('Poids supérieur à la limite de la zone.');
       const tier = await this.placementTier(tx, zone, row!, col!, input.type);
 
       const now = new Date();
@@ -319,14 +335,18 @@ export class YardService {
       await emit(tx, ctx, 'yard.container.arrived', { container: snapshot(ct) }, ct);
       if (ct.reefer) await emitReeferConfigured(tx, ctx, ct);
       return ct;
-    });
   }
 
   departure(id: string, input: { expectedVersion?: number }, ctx: Ctx): Promise<ContainerWithReefer> {
-    return this.tx(async (tx) => {
+    return this.tx(tx => this.departureInTx(tx, id, input, ctx));
+  }
+
+  async departureInTx(tx: Tx, id: string, input: { expectedVersion?: number }, ctx: Ctx): Promise<ContainerWithReefer> {
+
       const ct = await this.lockContainer(tx, id);
       this.checkVersion(ct.version, input.expectedVersion, CONTAINER_CHANGED);
       await this.assertTop(tx, ct);
+      assertRelease(ct);
       const exitDate = new Date();
       const res = await tx.container.updateMany({
         where: { id: ct.id, version: ct.version },
@@ -337,7 +357,6 @@ export class YardService {
       await this.recordMovement(tx, 'DEPARTURE', ct.id, positionOf(ct), null, ctx);
       await emit(tx, ctx, 'yard.container.departed', { container: snapshot(gone), from: positionOf(ct) }, gone);
       return gone;
-    });
   }
 
   transfer(id: string, input: { targetZoneId: string; expectedVersion?: number }, ctx: Ctx): Promise<ContainerWithReefer> {
@@ -360,9 +379,13 @@ export class YardService {
   }
 
   move(id: string, input: { toZoneId: string; toRow: number; toCol: number; expectedVersion?: number }, ctx: Ctx): Promise<ContainerWithReefer> {
-    return this.tx(async (tx) => {
+    return this.tx(tx => this.moveInTx(tx, id, input, ctx));
+  }
+
+  async moveInTx(tx: Tx, id: string, input: { toZoneId: string; toRow: number; toCol: number; expectedVersion?: number }, ctx: Ctx, correction = false): Promise<ContainerWithReefer> {
+
       const target = { zoneId: input.toZoneId, row: input.toRow, col: input.toCol };
-      const ct = await this.lockContainer(tx, id, { zones: [{ zoneId: target.zoneId, mode: 'shared' }], slots: [target] });
+      const ct = await this.lockContainer(tx, id, { zones: [{ zoneId: target.zoneId, mode: 'exclusive' }], slots: [target] });
       this.checkVersion(ct.version, input.expectedVersion, CONTAINER_CHANGED);
       if (ct.zoneId === target.zoneId && ct.row === target.row && ct.col === target.col) {
         throw errors.validation('Le conteneur est déjà à cet emplacement.');
@@ -373,10 +396,10 @@ export class YardService {
       const from = positionOf(ct);
       const to = { ...target, tier };
       const updated = await this.writePosition(tx, ct, to);
-      await this.recordMovement(tx, 'MOVE', ct.id, from, to, ctx);
-      await emit(tx, ctx, 'yard.container.moved', { container: snapshot(updated), from, to }, updated);
+      await this.recordMovement(tx, correction ? 'CORRECTION' : 'MOVE', ct.id, from, to, ctx);
+      if (correction) await emit(tx, ctx, 'yard.container.relocated', { container: snapshot(updated), from, to, reason: 'CORRECTION' }, updated);
+      else await emit(tx, ctx, 'yard.container.moved', { container: snapshot(updated), from, to }, updated);
       return updated;
-    });
   }
 
   undoMovement(movementId: string, ctx: Ctx): Promise<ContainerWithReefer> {
@@ -386,7 +409,7 @@ export class YardService {
       if (m.type !== 'MOVE') throw errors.validation('Seuls les déplacements (drag & drop) peuvent être annulés.');
       if (m.undoneAt) throw errors.ruleViolation('Ce mouvement a déjà été annulé.');
       const from = { zoneId: m.fromZoneId!, row: m.fromRow!, col: m.fromCol! };
-      const ct = await this.lockContainer(tx, m.containerId, { zones: [{ zoneId: from.zoneId, mode: 'shared' }], slots: [from] }).catch(
+      const ct = await this.lockContainer(tx, m.containerId, { zones: [{ zoneId: from.zoneId, mode: 'exclusive' }], slots: [from] }).catch(
         (err: unknown) => {
           if (err instanceof Error && 'code' in err && (err as { code: string }).code === 'NOT_FOUND') {
             throw errors.ruleViolation("Le conteneur n'est plus dans le yard : annulation impossible.");
@@ -525,8 +548,14 @@ export class YardService {
 
   // ---------- movements ----------
 
-  listMovements(take: number): Promise<(Movement & { container: Container })[]> {
-    return this.prisma.movement.findMany({ orderBy: { createdAt: 'desc' }, take, include: { container: true } });
+  listMovements(take: number, scope?: 'moves' | 'operations'): Promise<(Movement & { container: Container })[]> {
+    // Filter before limiting: bulk COMPACT events must not evict manual history.
+    const where: Prisma.MovementWhereInput = scope === 'moves'
+      ? { type: 'MOVE', undoneAt: null }
+      : scope === 'operations'
+        ? { type: { in: ['ARRIVAL', 'DEPARTURE', 'TRANSFER'] } }
+        : {};
+    return this.prisma.movement.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take, include: { container: true } });
   }
 }
 
