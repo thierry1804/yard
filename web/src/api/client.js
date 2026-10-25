@@ -92,6 +92,7 @@ export const api = {
 
   getContainers: (params) => request(`/containers${toQuery(params)}`),
   getContainer: (id) => request(`/containers/${id}`),
+  getContainerHistory: (id) => request(`/containers/${encodeURIComponent(id)}/history`),
   containerArrival: (data) => request('/containers/arrival', { method: 'POST', body: data }),
   containerDeparture: (id, expectedVersion) =>
     request(`/containers/${id}/departure`, { method: 'POST', body: { expectedVersion } }),

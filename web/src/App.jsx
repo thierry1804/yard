@@ -30,6 +30,7 @@ function App() {
     compactZone: compactZoneAction, compactAll,
     stats,
     connectionStatus,
+    movementsStamp,
   } = useYardState(!!user);
 
   const [showZoneManager, setShowZoneManager] = useState(false);
@@ -46,6 +47,12 @@ function App() {
     setStackPopup(null);
     setTimeout(() => setDetailContainer(ct), 150);
   }, [setStackPopup, setDetailContainer]);
+
+  // The open container follows live updates; once it leaves the yard the last
+  // known snapshot stays visible, marked as departed.
+  const liveDetail = detailContainer
+    ? allContainers.find((c) => c._dbId === detailContainer._dbId) ?? { ...detailContainer, departed: true }
+    : null;
 
   // Escape key handler
   useEffect(() => {
@@ -147,6 +154,7 @@ function App() {
             executeMove={executeMove}
             showToast={showToast}
             setStackPopup={setStackPopup}
+            onOpenDetail={setDetailContainer}
           />
         </div>
       </div>
@@ -166,9 +174,11 @@ function App() {
 
       {/* Detail Panel */}
       <DetailPanel
-        container={detailContainer}
+        container={liveDetail}
         stacks={stacks}
+        historyStamp={movementsStamp}
         onClose={() => setDetailContainer(null)}
+        onOpenDetail={setDetailContainer}
       />
 
       {/* Zone Manager */}

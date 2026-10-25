@@ -4,7 +4,7 @@ import { posLabel } from '../data/generateData';
 import { canStack } from '../data/rules';
 import YardCell from './YardCell';
 
-export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, searchQuery, executeMove, showToast, setStackPopup }) {
+export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, searchQuery, executeMove, showToast, setStackPopup, onOpenDetail }) {
   const [dragData, setDragData] = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
   const [justMovedCell, setJustMovedCell] = useState(null);
@@ -75,8 +75,11 @@ export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, sear
         const toRow = parseInt(cell.dataset.row);
         const toCol = parseInt(cell.dataset.col);
 
+        // Released on the cell it was grabbed from: a plain click opens the
+        // container's details instead of moving it.
         if (toZone === dd.fromZone && toRow === dd.fromRow && toCol === dd.fromCol) {
           cleanup();
+          onOpenDetail?.(dd.ct);
           return;
         }
 
@@ -115,7 +118,7 @@ export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, sear
       document.removeEventListener('mousemove', moveGhost);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragData, stacks, executeMove, showToast]);
+  }, [dragData, stacks, executeMove, showToast, onOpenDetail]);
 
   const showTooltip = useCallback((e, zoneId, row, col) => {
     const stack = stacks[zoneId]?.[row]?.[col];

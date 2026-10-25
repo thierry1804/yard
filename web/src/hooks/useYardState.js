@@ -72,6 +72,8 @@ export function useYardState(enabled) {
   const [stackPopup, setStackPopup] = useState(null);
   const [detailContainer, setDetailContainer] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('reconnecting');
+  // Bumped on every movements refresh, so open views (container history) can refetch.
+  const [movementsStamp, setMovementsStamp] = useState(0);
 
   const showToast = useCallback((type, message) => {
     const id = Date.now() + Math.random();
@@ -94,6 +96,7 @@ export function useYardState(enabled) {
   const refreshMovements = useCallback(async () => {
     const data = await api.getMovements(50);
     setMovements(data);
+    setMovementsStamp((s) => s + 1);
   }, []);
 
   const refreshAll = useCallback(async () => {
@@ -449,5 +452,6 @@ export function useYardState(enabled) {
     updateReefer,
     stats: { totalContainers, occupancy, reeferCount, multiStacks, typeCounts },
     connectionStatus,
+    movementsStamp,
   };
 }
