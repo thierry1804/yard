@@ -75,7 +75,9 @@ export class YardService {
   }
 
   private async findPresent(tx: Tx, id: string): Promise<ContainerWithReefer> {
-    const where = UUID_RE.test(id) ? { id, status: 'PRESENT' as const } : { containerNo: id, status: 'PRESENT' as const };
+    const containerNo = normalizeContainerNo(id);
+    if (!UUID_RE.test(id) && !CONTAINER_NO_RE.test(containerNo)) throw errors.notFound(`Conteneur ${id} introuvable.`);
+    const where = UUID_RE.test(id) ? { id, status: 'PRESENT' as const } : { containerNo, status: 'PRESENT' as const };
     const ct = await tx.container.findFirst({ where, include: { reefer: true } });
     if (!ct) throw errors.notFound(`Conteneur ${id} introuvable.`);
     return ct;
@@ -360,7 +362,7 @@ export class YardService {
 
   undoMovement(movementId: string, ctx: Ctx): Promise<ContainerWithReefer> {
     return this.tx(async (tx) => {
-      const m = await tx.movement.findUnique({ where: { id: movementId } });
+      const m = UUID_RE.test(movementId) ? await tx.movement.findUnique({ where: { id: movementId } }) : null;
       if (!m) throw errors.notFound('Mouvement introuvable.');
       if (m.type !== 'MOVE') throw errors.validation('Seuls les déplacements (drag & drop) peuvent être annulés.');
       if (m.undoneAt) throw errors.ruleViolation('Ce mouvement a déjà été annulé.');

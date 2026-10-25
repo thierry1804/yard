@@ -12,7 +12,7 @@ const arrival = z.object({
   containerNo: z.string().optional(),
   type: containerTypeSchema,
   client: z.string().optional(),
-  weightKg: z.number().int().nonnegative().optional(),
+  weightKg: z.number().int().nonnegative().max(100_000).optional(),
   zoneId: z.string(),
   row: z.number().int().optional(),
   col: z.number().int().optional(),
@@ -31,7 +31,7 @@ const reefer = z.object({
   ventSetting: z.string().optional(),
   humidity: z.string().optional(),
 });
-const containerQuery = z.object({ zoneId: z.string().optional(), type: z.string().optional(), q: z.string().optional() });
+const containerQuery = z.object({ zoneId: z.string().optional(), type: containerTypeSchema.optional(), q: z.string().optional() });
 const movementsQuery = z.object({ take: z.coerce.number().int().min(1).max(500).default(50) });
 const idParam = z.object({ id: z.string() });
 

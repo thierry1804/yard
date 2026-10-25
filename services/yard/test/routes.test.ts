@@ -108,3 +108,27 @@ describe('zones, compaction and movements', () => {
     expect(undo.json()).toMatchObject({ row: 0, col: 0 });
   });
 });
+
+describe('invalid input never yields a 500', () => {
+  it('undo with a non-uuid id → 404', async () => {
+    const res = await app.inject({ method: 'POST', url: '/movements/abc/undo', headers: as('OPERATOR') });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('unknown container type filter → 400', async () => {
+    const res = await app.inject({ url: '/containers?type=bogus', headers: as('VIEWER') });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('absurd weight → 400', async () => {
+    const res = await arrive({ weightKg: 3_000_000_000 });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('container lookup with a NUL byte → 404; lowercase number is found', async () => {
+    expect((await app.inject({ url: '/containers/%00', headers: as('VIEWER') })).statusCode).toBe(404);
+    const ct = (await arrive({ containerNo: 'MSCU7654321' })).json();
+    const res = await app.inject({ url: '/containers/mscu7654321', headers: as('VIEWER') });
+    expect(res.json().id).toBe(ct.id);
+  });
+});
