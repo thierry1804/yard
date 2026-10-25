@@ -4,3 +4,6 @@ dist/
 backend/data/
 *.tmp.*
 ~$*
+infra/keys/
+services/*/src/generated/
+.superpowers/

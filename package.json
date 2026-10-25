@@ -1,29 +1,20 @@
 {
   "name": "ccis-yard-view",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "workspaces": ["web", "packages/*", "services/*"],
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "chart.js": "^4.5.1",
-    "react": "^19.2.4",
-    "react-chartjs-2": "^5.3.1",
-    "react-dom": "^19.2.4"
+    "dev:web": "npm run dev -w @ccis/web",
+    "generate": "npm run generate --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "infra:up": "docker compose -f infra/docker-compose.yml --env-file .env up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml --env-file .env down",
+    "seed": "npm run seed -w @ccis/auth-service && npm run seed -w @ccis/yard-service"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.0",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.4.0",
-    "vite": "^8.0.0"
+    "typescript": "5.9.3",
+    "tsx": "4.23.15",
+    "@types/node": "22.20.5",
+    "vitest": "3.2.7"
   }
 }
