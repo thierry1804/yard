@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { containerTypeSchema } from '@ccis/contracts';
 import { actorOf, requireRole } from '@ccis/service-kit';
-import { toApiContainer, toApiMovement, toApiZone } from './mappers';
+import { toApiContainer, toApiHistory, toApiMovement, toApiZone } from './mappers';
 import type { Ctx, YardService } from './yard-service';
 
 const version = z.number().int().positive().optional();
@@ -44,7 +44,7 @@ const operator = { preHandler: requireRole('OPERATOR') };
 const admin = { preHandler: requireRole('ADMIN') };
 
 function ctx(req: FastifyRequest): Ctx {
-  return { actor: actorOf(req), correlationId: req.id };
+  return { actor: actorOf(req), correlationId: req.id, userEmail: req.identity?.email };
 }
 
 export function registerRoutes(app: FastifyInstance, svc: YardService): void {
@@ -74,6 +74,8 @@ export function registerRoutes(app: FastifyInstance, svc: YardService): void {
 
   // ----- containers -----
   app.get('/containers', viewer, async (req) => (await svc.listContainers(containerQuery.parse(req.query))).map(toApiContainer));
+
+  app.get('/containers/:id/history', viewer, async (req) => toApiHistory(await svc.history(idParam.parse(req.params).id)));
 
   app.get('/containers/:id', viewer, async (req) => toApiContainer(await svc.getContainer(idParam.parse(req.params).id)));
 

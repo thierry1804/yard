@@ -105,9 +105,12 @@ model Movement {
   toCol       Int?
   toTier      Int?
   userId      String?
+  // Snapshot of the author's email at the time of the action (from the JWT).
+  userEmail   String?
   createdAt   DateTime     @default(now())
   undoneAt    DateTime?
   undoneBy    String?
+  undoneByEmail String?
 
   @@index([createdAt(sort: Desc)])
 }

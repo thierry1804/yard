@@ -39,6 +39,40 @@ export function toApiContainer(c: ContainerWithReefer) {
   };
 }
 
+function position(zoneId: string | null, row: number | null, col: number | null, tier: number | null) {
+  return zoneId === null ? null : { zoneId, row, col, tier };
+}
+
+export function toApiHistory(h: { containerNo: string; visits: (Container & { movements: Movement[] })[] }) {
+  return {
+    containerNo: h.containerNo,
+    visits: h.visits.map((v) => ({
+      containerId: v.id,
+      status: v.status,
+      type: v.type,
+      isoCode: v.isoCode,
+      client: v.client,
+      weightKg: v.weightKg,
+      customsStatus: v.customsStatus,
+      entryDate: v.entryDate.toISOString(),
+      plannedExitDate: v.plannedExitDate?.toISOString() ?? null,
+      exitDate: v.exitDate?.toISOString() ?? null,
+      movements: v.movements.map((m) => ({
+        id: m.id,
+        type: m.type,
+        from: position(m.fromZoneId, m.fromRow, m.fromCol, m.fromTier),
+        to: position(m.toZoneId, m.toRow, m.toCol, m.toTier),
+        userId: m.userId,
+        userEmail: m.userEmail,
+        createdAt: m.createdAt.toISOString(),
+        undoneAt: m.undoneAt?.toISOString() ?? null,
+        undoneBy: m.undoneBy,
+        undoneByEmail: m.undoneByEmail,
+      })),
+    })),
+  };
+}
+
 export function toApiMovement(m: Movement & { container: Container }) {
   return {
     id: m.id,

@@ -13,6 +13,7 @@ type Tx = Prisma.TransactionClient;
 export interface Ctx {
   actor: Actor;
   correlationId: string;
+  userEmail?: string;
 }
 
 export type ContainerWithReefer = Container & { reefer: ReeferState | null };
@@ -185,6 +186,7 @@ export class YardService {
         toCol: to?.col,
         toTier: to?.tier,
         userId: ctx.actor?.userId,
+        userEmail: ctx.userEmail,
       },
     });
   }
@@ -406,7 +408,7 @@ export class YardService {
       const before = positionOf(ct);
       const to = { ...from, tier };
       const updated = await this.writePosition(tx, ct, to);
-      await tx.movement.update({ where: { id: m.id }, data: { undoneAt: new Date(), undoneBy: ctx.actor?.userId } });
+      await tx.movement.update({ where: { id: m.id }, data: { undoneAt: new Date(), undoneBy: ctx.actor?.userId, undoneByEmail: ctx.userEmail } });
       await emit(tx, ctx, 'yard.container.relocated', { container: snapshot(updated), from: before, to, reason: 'UNDO' }, updated);
       return updated;
     });
@@ -495,6 +497,30 @@ export class YardService {
       await emitReeferConfigured(tx, ctx, updated);
       return updated;
     });
+  }
+
+  // ---------- history ----------
+
+  // Every visit (container row) of the same container number, newest first,
+  // each with its movements in chronological order. Works for departed
+  // containers too.
+  async history(idOrNo: string): Promise<{ containerNo: string; visits: (Container & { movements: Movement[] })[] }> {
+    let containerNo: string;
+    if (UUID_RE.test(idOrNo)) {
+      const ct = await this.prisma.container.findUnique({ where: { id: idOrNo } });
+      if (!ct) throw errors.notFound(`Conteneur ${idOrNo} introuvable.`);
+      containerNo = ct.containerNo;
+    } else {
+      containerNo = normalizeContainerNo(idOrNo);
+      if (!CONTAINER_NO_RE.test(containerNo)) throw errors.notFound(`Conteneur ${idOrNo} introuvable.`);
+    }
+    const visits = await this.prisma.container.findMany({
+      where: { containerNo },
+      orderBy: { entryDate: 'desc' },
+      include: { movements: { orderBy: { createdAt: 'asc' } } },
+    });
+    if (visits.length === 0) throw errors.notFound(`Conteneur ${containerNo} introuvable.`);
+    return { containerNo, visits };
   }
 
   // ---------- movements ----------
