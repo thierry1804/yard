@@ -23,6 +23,7 @@ startFanout(amqp, hub, app.log);
 
 const shutdown = async () => {
   hub.closeAll();
+  hub.stop();
   await app.close();
   await amqp?.stop();
   process.exit(0);
