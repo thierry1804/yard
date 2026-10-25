@@ -61,6 +61,15 @@ describe('authentication', () => {
 });
 
 describe('forwarding', () => {
+  it('ignores a client-supplied X-Forwarded-For (rate limiting relies on the real address)', async () => {
+    seen.length = 0;
+    await gw.inject({
+      method: 'POST', url: '/auth/login', payload: { email: 'a@b.c', password: 'x' },
+      remoteAddress: '10.1.2.3', headers: { 'x-forwarded-for': '6.6.6.6' },
+    });
+    expect(seen[0].headers['x-forwarded-for']).toBe('10.1.2.3');
+  });
+
   it('injects identity, drops spoofed identity headers, propagates the correlation id', async () => {
     seen.length = 0;
     const res = await gw.inject({

@@ -24,6 +24,7 @@ export function buildAuthApp(deps: AuthDeps): FastifyInstance {
   const app = createApp({
     service: 'auth-service',
     logger: deps.logger,
+    trustProxy: true,
     checks: { database: async () => { await deps.prisma.$queryRaw`SELECT 1`; } },
   });
 
