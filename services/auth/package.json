@@ -1,0 +1,25 @@
+{
+  "name": "@ccis/auth-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "prisma generate",
+    "start": "prisma migrate deploy && tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "seed": "tsx scripts/seed.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ccis/contracts": "*",
+    "@ccis/service-kit": "*",
+    "@prisma/client": "6.19.3",
+    "argon2": "0.45.1",
+    "jose": "6.2.13",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "prisma": "6.19.3",
+    "@testcontainers/postgresql": "11.14.0"
+  }
+}
