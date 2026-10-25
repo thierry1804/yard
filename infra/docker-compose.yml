@@ -1,5 +1,13 @@
 name: ccis
 
+x-node-service: &node-service
+  image: node:22-bookworm
+  working_dir: /app
+  volumes:
+    - ..:/app
+  user: "1000:1000"
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -51,6 +59,61 @@ services:
       - ./rabbitmq/init.sh:/init.sh:ro
     entrypoint: ["/bin/sh", "/init.sh"]
     restart: "no"
+
+  auth:
+    <<: *node-service
+    command: ["npm", "run", "start", "-w", "@ccis/auth-service"]
+    environment:
+      HOME: /tmp
+      DATABASE_URL: postgresql://auth_svc:${AUTH_DB_PASSWORD}@postgres:5432/auth
+      JWT_PRIVATE_KEY_FILE: /app/infra/keys/jwt-private.pem
+      PORT: "4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  yard:
+    <<: *node-service
+    command: ["npm", "run", "start", "-w", "@ccis/yard-service"]
+    environment:
+      HOME: /tmp
+      DATABASE_URL: postgresql://yard_svc:${YARD_DB_PASSWORD}@postgres:5432/yard
+      AMQP_URL: amqp://yard:${RABBITMQ_YARD_PASSWORD}@rabbitmq:5672
+      PORT: "4002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4002/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  gateway:
+    <<: *node-service
+    command: ["npm", "run", "start", "-w", "@ccis/gateway"]
+    environment:
+      HOME: /tmp
+      AUTH_URL: http://auth:4001
+      YARD_URL: http://yard:4002
+      AMQP_URL: amqp://gateway:${RABBITMQ_GATEWAY_PASSWORD}@rabbitmq:5672
+      JWT_PUBLIC_KEY_FILE: /app/infra/keys/jwt-public.pem
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      PORT: "4000"
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-4000}:4000"
+    depends_on:
+      auth:
+        condition: service_healthy
+      yard:
+        condition: service_healthy
 
 volumes:
   pgdata:
