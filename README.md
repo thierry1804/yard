@@ -2,40 +2,44 @@
 
 Prototype d’interface de visualisation et de gestion du dépôt (yard) pour **CEVA Logistics — Dépôt Toamasina**. Vue plan du yard avec zones, conteneurs, drag & drop, mouvements et gestion des zones.
 
-## Stack
+## Architecture
 
-- **React 19** + **Vite 8**
-- Backend **Fastify** (`backend/`) : API REST + WebSocket temps réel, JWT, données persistées dans `backend/data/db.json`
+Microservices (voir `docs/superpowers/specs/2026-10-25-architecture-microservices-design.md`) :
+
+| Composant | Rôle | Port |
+|---|---|---|
+| `web/` | Front React 19 + Vite | 5180 |
+| `services/gateway` | Point d'entrée : JWT, routage, WebSocket | 4000 |
+| `services/auth` | Utilisateurs, connexion, JWT RS256 | interne 4001 |
+| `services/yard` | Zones, conteneurs, mouvements, règles, outbox | interne 4002 |
+| PostgreSQL 16 | Une base par service | 5442 |
+| RabbitMQ 3.13 | Événements (`yard.events`…) | 5682 / 15682 |
 
 ## Démarrage
 
-```bash
-# 1. Backend (port 4000)
-cd backend
-npm install
-npm start            # crée un jeu de données de démo au premier lancement
-npm run seed         # (optionnel) réinitialise les données de démo
+Prérequis : Node 22, Docker.
 
-# 2. Front (dans un autre terminal, à la racine)
+```bash
 npm install
-npm run dev
+npm run generate                 # clients Prisma
+cp .env.example .env
+sh infra/scripts/gen-keys.sh     # clés JWT de développement
+npm run infra:up                 # Postgres, RabbitMQ, auth, yard, gateway
+DATABASE_URL=postgresql://auth_svc:auth-dev@127.0.0.1:5442/auth npm run seed -w @ccis/auth-service
+DATABASE_URL=postgresql://yard_svc:yard-dev@127.0.0.1:5442/yard npm run seed -w @ccis/yard-service
+npx --prefix web vite web --host 127.0.0.1 --port 5180
 ```
 
-Comptes de démo :
+Comptes de démo : `admin@ccis.mg` / `admin123` (ADMIN), `operateur@ccis.mg` / `operateur123` (OPERATOR), `lecteur@ccis.mg` / `lecteur123` (VIEWER).
 
-| Rôle | Email | Mot de passe | Droits |
-|---|---|---|---|
-| ADMIN | admin@ccis.mg | admin123 | tout, y compris gestion des zones |
-| OPERATOR | operateur@ccis.mg | operateur123 | mouvements, compactage, reefers |
-| VIEWER | lecteur@ccis.mg | lecteur123 | lecture seule |
+Interface RabbitMQ : http://127.0.0.1:15682 (`admin` / `admin-dev`).
 
-Variables d'environnement du backend : `PORT` (4000), `HOST` (127.0.0.1), `JWT_SECRET`, `DB_FILE`, `CORS_ORIGIN`, `REEFER_SIM_INTERVAL` (secondes entre deux relevés de température simulés, 0 pour désactiver). Côté front : `VITE_API_URL`, `VITE_WS_URL`.
-
-Build :
+## Tests
 
 ```bash
-npm run build
-npm run preview
+npm test                               # tous les packages (Docker requis : Testcontainers)
+node infra/scripts/smoke.mjs           # bout en bout via la gateway
+sh infra/scripts/smoke-broker-down.sh  # RabbitMQ arrêté : aucune perte
 ```
 
 ---
