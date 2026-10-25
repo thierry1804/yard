@@ -23,8 +23,19 @@ export type PrismaLike = SqlClient & {
 // Every service owns an identical `outbox` table (see each prisma/schema.prisma).
 // Rows stay locked while they are published; if publishing throws, the
 // transaction rolls back and the rows are retried on the next cycle.
-export function prismaOutboxStore(prisma: PrismaLike): OutboxStore {
+export interface PrismaOutboxStore extends OutboxStore {
+  // Deletes published rows older than `days` (spec §3.4: 7 days). Returns the count.
+  purgePublished(days: number): Promise<number>;
+}
+
+export function prismaOutboxStore(prisma: PrismaLike): PrismaOutboxStore {
   return {
+    purgePublished(days) {
+      return prisma.$executeRawUnsafe(
+        `DELETE FROM outbox WHERE "publishedAt" < now() - make_interval(days => $1::int)`,
+        days,
+      );
+    },
     async claimBatch(limit, publish) {
       return prisma.$transaction(async (tx) => {
         const rows = await tx.$queryRawUnsafe<OutboxRecord[]>(

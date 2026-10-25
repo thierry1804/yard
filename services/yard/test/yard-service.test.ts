@@ -178,7 +178,7 @@ describe('compactZone', () => {
     const a = await arrive('FULL_40', 'A', 0, 0, { plannedExitDate: '2026-11-10' });
     const b = await arrive('FULL_20', 'A', 1, 2, { plannedExitDate: '2026-11-01' });
     const count = await svc.compactZone('A', operator);
-    expect(count).toBe(2);
+    expect(count).toBe(1); // only b actually moved
     const after = await prisma.container.findMany({ where: { zoneId: 'A' } });
     expect(after.find((c) => c.id === a.id)).toMatchObject({ row: 0, col: 0, tier: 1, version: 1 });
     expect(after.find((c) => c.id === b.id)).toMatchObject({ row: 0, col: 1, tier: 1, version: 2 });
@@ -191,7 +191,7 @@ describe('compactZone', () => {
     expect(await svc.compactZone('B', operator)).toBe(0);
     await arrive('FULL_20', 'A', 1, 1);
     await arrive('FULL_20', 'B', 1, 1);
-    expect(await svc.compactAll(operator)).toBe(2);
+    expect(await svc.compactAll(operator)).toBe(2); // both moved to slot (0,0)
   });
 });
 

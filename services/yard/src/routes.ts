@@ -6,6 +6,8 @@ import { toApiContainer, toApiMovement, toApiZone } from './mappers';
 import type { Ctx, YardService } from './yard-service';
 
 const version = z.number().int().positive().optional();
+// Zone ids are stored uppercase; accept any case and surrounding spaces.
+const zoneId = z.string().trim().min(1).transform((s) => s.toUpperCase());
 const zoneCreate = z.object({ id: z.string(), label: z.string().optional(), rows: z.number().int(), cols: z.number().int() });
 const zoneUpdate = z.object({ label: z.string().optional(), rows: z.number().int().optional(), cols: z.number().int().optional(), expectedVersion: version });
 const arrival = z.object({
@@ -13,14 +15,14 @@ const arrival = z.object({
   type: containerTypeSchema,
   client: z.string().optional(),
   weightKg: z.number().int().nonnegative().max(100_000).optional(),
-  zoneId: z.string(),
+  zoneId,
   row: z.number().int().optional(),
   col: z.number().int().optional(),
   plannedExitDate: z.string().optional(),
 });
 const versionOnly = z.object({ expectedVersion: version });
-const transfer = z.object({ targetZoneId: z.string(), expectedVersion: version });
-const move = z.object({ toZoneId: z.string(), toRow: z.number().int(), toCol: z.number().int(), expectedVersion: version });
+const transfer = z.object({ targetZoneId: zoneId, expectedVersion: version });
+const move = z.object({ toZoneId: zoneId, toRow: z.number().int(), toCol: z.number().int(), expectedVersion: version });
 const reefer = z.object({
   commodity: z.string().optional(),
   setPoint: z.number().optional(),
@@ -30,10 +32,12 @@ const reefer = z.object({
   powerStatus: z.enum(['on', 'off']).optional(),
   ventSetting: z.string().optional(),
   humidity: z.string().optional(),
+  expectedVersion: version,
 });
-const containerQuery = z.object({ zoneId: z.string().optional(), type: containerTypeSchema.optional(), q: z.string().optional() });
+const containerQuery = z.object({ zoneId: zoneId.optional(), type: containerTypeSchema.optional(), q: z.string().optional() });
 const movementsQuery = z.object({ take: z.coerce.number().int().min(1).max(500).default(50) });
 const idParam = z.object({ id: z.string() });
+const zoneParam = z.object({ id: zoneId });
 
 const viewer = { preHandler: requireRole('VIEWER') };
 const operator = { preHandler: requireRole('OPERATOR') };
@@ -54,19 +58,19 @@ export function registerRoutes(app: FastifyInstance, svc: YardService): void {
   });
 
   app.patch('/zones/:id', admin, async (req) => {
-    const { id } = idParam.parse(req.params);
+    const { id } = zoneParam.parse(req.params);
     return toApiZone(await svc.updateZone(id, zoneUpdate.parse(req.body ?? {}), ctx(req)));
   });
 
   app.delete('/zones/:id', admin, async (req, reply) => {
-    await svc.deleteZone(idParam.parse(req.params).id, ctx(req));
+    await svc.deleteZone(zoneParam.parse(req.params).id, ctx(req));
     reply.code(204);
   });
 
   // Static path: Fastify's router prefers it over /zones/:id/compact.
   app.post('/zones/compact-all', operator, async (req) => ({ total: await svc.compactAll(ctx(req)) }));
 
-  app.post('/zones/:id/compact', operator, async (req) => ({ count: await svc.compactZone(idParam.parse(req.params).id, ctx(req)) }));
+  app.post('/zones/:id/compact', operator, async (req) => ({ count: await svc.compactZone(zoneParam.parse(req.params).id, ctx(req)) }));
 
   // ----- containers -----
   app.get('/containers', viewer, async (req) => (await svc.listContainers(containerQuery.parse(req.query))).map(toApiContainer));

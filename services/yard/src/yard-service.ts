@@ -37,6 +37,7 @@ export interface ReeferPatch {
   powerStatus?: 'on' | 'off';
   ventSetting?: string;
   humidity?: string;
+  expectedVersion?: number;
 }
 
 interface Pos {
@@ -49,22 +50,38 @@ interface Pos {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CARRIERS = ['MSCU', 'CMAU', 'MAEU', 'HLCU', 'OOLU', 'EISU', 'TCLU', 'MSKU', 'ONEU', 'CSLU'];
 const CONTAINER_CHANGED = 'Ce conteneur a été modifié par un autre utilisateur.';
+const MAX_TX_ATTEMPTS = 3;
+
+// Deadlocks and write conflicts are transient: the transaction is replayed.
+function isRetryable(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError) return err.code === 'P2034';
+  return err instanceof Error && /deadlock detected|40P01/i.test(err.message);
+}
 
 export class YardService {
   constructor(private readonly prisma: PrismaClient, private readonly onCommitted: () => void = () => {}) {}
 
   // ---------- infrastructure ----------
 
+  // maxWait + timeout stay below the gateway's upstream timeout (15 s), so a
+  // client never gets a 503 for an operation that later commits.
   private async tx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-    try {
-      const result = await this.prisma.$transaction(fn, { timeout: 10_000 });
-      this.onCommitted();
-      return result;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw errors.ruleViolation('Emplacement ou numéro de conteneur pris entre-temps par une autre opération, réessayez.');
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const result = await this.prisma.$transaction(fn, { maxWait: 3_000, timeout: 10_000 });
+        this.onCommitted();
+        return result;
+      } catch (err) {
+        if (isRetryable(err) && attempt < MAX_TX_ATTEMPTS) continue;
+        if (err instanceof Prisma.PrismaClientKnownRequestError) {
+          if (err.code === 'P2002') {
+            throw errors.ruleViolation('Emplacement ou numéro de conteneur pris entre-temps par une autre opération, réessayez.');
+          }
+          if (err.code === 'P2028') throw errors.serviceUnavailable('Le yard est momentanément occupé, réessayez.');
+        }
+        if (isRetryable(err)) throw errors.serviceUnavailable('Conflit avec une opération simultanée, réessayez.');
+        throw err;
       }
-      throw err;
     }
   }
 
@@ -377,7 +394,10 @@ export class YardService {
       );
       const fresh = await tx.movement.findUniqueOrThrow({ where: { id: movementId } });
       if (fresh.undoneAt) throw errors.ruleViolation('Ce mouvement a déjà été annulé.');
-      if (ct.zoneId !== m.toZoneId || ct.row !== m.toRow || ct.col !== m.toCol) {
+      const later = await tx.movement.count({
+        where: { containerId: m.containerId, createdAt: { gt: m.createdAt }, undoneAt: null },
+      });
+      if (later > 0 || ct.zoneId !== m.toZoneId || ct.row !== m.toRow || ct.col !== m.toCol) {
         throw errors.ruleViolation(`${ct.containerNo} a été déplacé depuis : annulation impossible.`);
       }
       await this.assertTop(tx, ct);
@@ -395,49 +415,64 @@ export class YardService {
   compactZone(zoneId: string, ctx: Ctx): Promise<number> {
     return this.tx(async (tx) => {
       await lockZones(tx, [{ zoneId, mode: 'exclusive' }]);
-      const zone = await this.getZone(tx, zoneId);
-      const cts = await tx.container.findMany({ where: { zoneId, status: 'PRESENT' }, include: { reefer: true }, orderBy: { id: 'asc' } });
-      if (cts.length === 0) return 0;
-      const plan = planCompaction(zone, cts);
-      if (!plan) throw errors.ruleViolation(`Compactage impossible : la zone ${zoneId} est trop pleine.`);
-
-      // Park every container on a unique temporary row first, so the partial
-      // unique slot index never sees two containers on the same final slot.
-      for (const [i, ct] of cts.entries()) {
-        await tx.container.update({ where: { id: ct.id }, data: { row: -(i + 1) } });
-      }
-      for (const ct of cts) {
-        const target = plan.get(ct.id)!;
-        const from = positionOf(ct);
-        const to = { zoneId, ...target };
-        const changed = from.row !== to.row || from.col !== to.col || from.tier !== to.tier;
-        if (!changed) {
-          await tx.container.update({ where: { id: ct.id }, data: { row: from.row } });
-          continue;
-        }
-        const updated = await tx.container.update({
-          where: { id: ct.id },
-          data: { row: to.row, col: to.col, tier: to.tier, version: { increment: 1 } },
-        });
-        await this.recordMovement(tx, 'COMPACT', ct.id, from, to, ctx);
-        await emit(tx, ctx, 'yard.container.relocated', { container: snapshot(updated), from, to, reason: 'COMPACT' }, updated);
-      }
-      return cts.length;
+      return this.compactInTx(tx, await this.getZone(tx, zoneId), ctx);
     });
   }
 
-  async compactAll(ctx: Ctx): Promise<number> {
-    let total = 0;
-    for (const zone of await this.listZones()) total += await this.compactZone(zone.id, ctx);
-    return total;
+  // All zones in one transaction: either the whole yard is compacted or nothing.
+  compactAll(ctx: Ctx): Promise<number> {
+    return this.tx(async (tx) => {
+      const zones = await tx.zone.findMany({ orderBy: { id: 'asc' } });
+      await lockZones(tx, zones.map((z) => ({ zoneId: z.id, mode: 'exclusive' as const })));
+      let moved = 0;
+      for (const zone of zones) moved += await this.compactInTx(tx, zone, ctx);
+      return moved;
+    });
+  }
+
+  // Returns the number of containers that actually changed position.
+  private async compactInTx(tx: Tx, zone: Zone, ctx: Ctx): Promise<number> {
+    const zoneId = zone.id;
+    const cts = await tx.container.findMany({ where: { zoneId, status: 'PRESENT' }, include: { reefer: true }, orderBy: { id: 'asc' } });
+    if (cts.length === 0) return 0;
+    const plan = planCompaction(zone, cts);
+    if (!plan) throw errors.ruleViolation(`Compactage impossible : la zone ${zoneId} est trop pleine.`);
+
+    // Park every container on a unique temporary row first, so the partial
+    // unique slot index never sees two containers on the same final slot.
+    for (const [i, ct] of cts.entries()) {
+      await tx.container.update({ where: { id: ct.id }, data: { row: -(i + 1) } });
+    }
+    let moved = 0;
+    for (const ct of cts) {
+      const target = plan.get(ct.id)!;
+      const from = positionOf(ct);
+      const to = { zoneId, ...target };
+      const changed = from.row !== to.row || from.col !== to.col || from.tier !== to.tier;
+      if (!changed) {
+        await tx.container.update({ where: { id: ct.id }, data: { row: from.row } });
+        continue;
+      }
+      moved++;
+      const updated = await tx.container.update({
+        where: { id: ct.id },
+        data: { row: to.row, col: to.col, tier: to.tier, version: { increment: 1 } },
+      });
+      await this.recordMovement(tx, 'COMPACT', ct.id, from, to, ctx);
+      await emit(tx, ctx, 'yard.container.relocated', { container: snapshot(updated), from, to, reason: 'COMPACT' }, updated);
+    }
+    return moved;
   }
 
   updateReefer(id: string, patch: ReeferPatch, ctx: Ctx): Promise<ContainerWithReefer> {
+    const { expectedVersion, ...fields } = patch;
     return this.tx(async (tx) => {
-      const ct = await this.findPresent(tx, id);
+      const ct = await this.lockContainer(tx, id);
       if (!ct.reefer) throw errors.ruleViolation(`${ct.containerNo} n'est pas un reefer.`);
-      const next = { ...ct.reefer, ...stripUndefined(patch) };
-      if (patch.currentTemp !== undefined) next.lastReadingAt = new Date();
+      this.checkVersion(ct.version, expectedVersion, CONTAINER_CHANGED);
+      const next = { ...ct.reefer, ...stripUndefined(fields) };
+      if (next.tempMin > next.tempMax) throw errors.validation('La température min doit être inférieure ou égale à la max.');
+      if (fields.currentTemp !== undefined) next.lastReadingAt = new Date();
       next.alert = computeTempAlert(next);
       const reefer = await tx.reeferState.update({
         where: { containerId: ct.id },
@@ -454,7 +489,9 @@ export class YardService {
           alert: next.alert,
         },
       });
-      const updated = { ...ct, reefer };
+      const res = await tx.container.updateMany({ where: { id: ct.id, version: ct.version }, data: { version: { increment: 1 } } });
+      if (res.count === 0) throw errors.versionConflict(CONTAINER_CHANGED);
+      const updated = { ...ct, version: ct.version + 1, reefer };
       await emitReeferConfigured(tx, ctx, updated);
       return updated;
     });
@@ -490,11 +527,22 @@ function emitReeferConfigured(tx: Tx, ctx: Ctx, ct: ContainerWithReefer): Promis
   );
 }
 
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+// Accepts YYYY-MM-DD (midnight UTC) or a full ISO 8601 timestamp, and refuses
+// impossible calendar days (2026-02-31) that Date would silently roll over.
 function parseOptionalDate(value: string | undefined): Date | null {
   if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) throw errors.validation(`Date invalide : ${value}.`);
-  return d;
+  const m = DATE_RE.exec(value) ?? ISO_RE.exec(value);
+  const invalid = () => errors.validation(`Date invalide : ${value} (format attendu AAAA-MM-JJ).`);
+  if (!m) throw invalid();
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const day = new Date(Date.UTC(y, mo - 1, d));
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) throw invalid();
+  const parsed = DATE_RE.test(value) ? day : new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw invalid();
+  return parsed;
 }
 
 function stripUndefined<T extends object>(o: T): Partial<T> {

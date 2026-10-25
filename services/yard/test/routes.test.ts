@@ -95,7 +95,8 @@ describe('zones, compaction and movements', () => {
   it('compact routes return counts; compact-all is not taken as a zone id', async () => {
     await arrive({ row: 1, col: 1 });
     expect((await app.inject({ method: 'POST', url: '/zones/A/compact', headers: as('OPERATOR') })).json()).toEqual({ count: 1 });
-    expect((await app.inject({ method: 'POST', url: '/zones/compact-all', headers: as('OPERATOR') })).json()).toEqual({ total: 1 });
+    // Already compact: counts report containers actually moved.
+    expect((await app.inject({ method: 'POST', url: '/zones/compact-all', headers: as('OPERATOR') })).json()).toEqual({ total: 0 });
   });
 
   it('movements list with embedded container, newest first, and undo', async () => {

@@ -19,7 +19,15 @@ const app = buildYardApp({
 
 amqp = new AmqpClient(config.amqpUrl, app.log);
 amqp.onConnected((ch) => declareExchanges(ch, ['yard.events', 'yard.commands']));
-relay = new OutboxRelay({ store: prismaOutboxStore(prisma as unknown as PrismaLike), client: amqp, log: app.log });
+const outbox = prismaOutboxStore(prisma as unknown as PrismaLike);
+relay = new OutboxRelay({ store: outbox, client: amqp, log: app.log });
+
+const purgeOutbox = () =>
+  outbox
+    .purgePublished(7)
+    .then((n) => { if (n > 0) app.log.info({ purged: n }, 'outbox purgée'); })
+    .catch((err) => app.log.warn({ err }, 'purge outbox échouée'));
+setInterval(purgeOutbox, 6 * 3600_000).unref();
 
 const shutdown = async () => {
   await app.close();
@@ -33,4 +41,5 @@ process.on('SIGTERM', shutdown);
 
 await amqp.start();
 relay.start();
+void purgeOutbox();
 await app.listen({ port: config.port, host: config.host });
