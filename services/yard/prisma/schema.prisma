@@ -1,0 +1,125 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ContainerType {
+  EMPTY_20
+  EMPTY_40
+  FULL_20
+  FULL_40
+  REEFER
+  REEFER_FULL
+}
+
+enum ContainerStatus {
+  PRESENT
+  DEPARTED
+}
+
+enum CustomsStatus {
+  RELEASED
+  HOLD
+}
+
+enum MovementType {
+  ARRIVAL
+  DEPARTURE
+  TRANSFER
+  MOVE
+  COMPACT
+}
+
+model Zone {
+  id        String   @id
+  label     String
+  rows      Int
+  cols      Int
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+}
+
+// zoneId is not a foreign key: departed containers keep their last position
+// even after the zone is deleted. Zone existence is enforced by the service.
+// Partial unique indexes (present containers only) live in the migration SQL:
+//   container_no_present   ("containerNo")
+//   container_slot_present ("zoneId", "row", "col", "tier")
+// Check every future `prisma migrate dev` output does not drop them.
+model Container {
+  id              String          @id @default(uuid()) @db.Uuid
+  containerNo     String
+  type            ContainerType
+  isoCode         String
+  client          String?
+  weightKg        Int?
+  zoneId          String
+  row             Int
+  col             Int
+  tier            Int
+  entryDate       DateTime        @default(now())
+  plannedExitDate DateTime?
+  exitDate        DateTime?
+  customsStatus   CustomsStatus   @default(RELEASED)
+  status          ContainerStatus @default(PRESENT)
+  version         Int             @default(1)
+  reefer          ReeferState?
+  movements       Movement[]
+
+  @@index([zoneId, row, col])
+  @@index([containerNo])
+}
+
+model ReeferState {
+  containerId   String    @id @db.Uuid
+  container     Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  commodity     String
+  setPoint      Float
+  tempMin       Float
+  tempMax       Float
+  powerStatus   String
+  ventSetting   String
+  humidity      String
+  currentTemp   Float
+  lastReadingAt DateTime
+  alert         Boolean   @default(false)
+  alertReason   String?
+}
+
+model Movement {
+  id          String       @id @default(uuid()) @db.Uuid
+  type        MovementType
+  containerId String       @db.Uuid
+  container   Container    @relation(fields: [containerId], references: [id])
+  fromZoneId  String?
+  fromRow     Int?
+  fromCol     Int?
+  fromTier    Int?
+  toZoneId    String?
+  toRow       Int?
+  toCol       Int?
+  toTier      Int?
+  userId      String?
+  createdAt   DateTime     @default(now())
+  undoneAt    DateTime?
+  undoneBy    String?
+
+  @@index([createdAt(sort: Desc)])
+}
+
+model OutboxMessage {
+  id          String    @id @db.Uuid
+  exchange    String
+  routingKey  String
+  payload     Json
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox")
+}
