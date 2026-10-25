@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function LoginScreen({ onLogin }) {
+export default function LoginScreen({ onLogin, notice }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -54,6 +54,7 @@ export default function LoginScreen({ onLogin }) {
               required
             />
           </div>
+          {notice && !error && <div className="form-result error">{notice}</div>}
           {error && <div className="form-result error">{error}</div>}
           <button className="modal-primary-btn" type="submit" disabled={loading}>
             {loading ? 'Connexion…' : 'Se connecter'}

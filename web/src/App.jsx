@@ -14,7 +14,7 @@ import Dashboard from './components/Dashboard';
 import ReeferMonitor from './components/ReeferMonitor';
 
 function App() {
-  const { user, checking, login, logout } = useAuth();
+  const { user, checking, sessionExpired, login, logout } = useAuth();
   const {
     stacks, zones, allContainers, loading,
     moveHistory, movementLog,
@@ -29,6 +29,7 @@ function App() {
     containerArrival, containerDeparture, containerTransfer,
     compactZone: compactZoneAction, compactAll,
     stats,
+    connectionStatus,
   } = useYardState(!!user);
 
   const [showZoneManager, setShowZoneManager] = useState(false);
@@ -67,13 +68,14 @@ function App() {
   }
 
   if (!user) {
-    return <LoginScreen onLogin={login} />;
+    return <LoginScreen onLogin={login} notice={sessionExpired ? 'Session expirée, reconnectez-vous.' : null} />;
   }
 
   return (
     <>
       <Header
         user={user}
+        connectionStatus={connectionStatus}
         onLogout={logout}
         onOpenZoneManager={() => setShowZoneManager(true)}
         onOpenMovementManager={() => setShowMovementManager(true)}

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { MAX_TIER, TYPES } from '../data/config';
 import { posLabel } from '../data/generateData';
-import { api, getToken } from '../api/client';
+import { api, notifyUnauthorized } from '../api/client';
 import { toApiType, toUiType } from '../api/typeMap';
 import { connectYardSocket } from '../api/ws';
 
@@ -17,6 +17,8 @@ function toUiContainer(c) {
     row: c.row,
     col: c.col,
     tier: c.tier,
+    version: c.version,
+    customsStatus: c.customsStatus,
     entryDate: c.entryDate ? c.entryDate.slice(0, 10) : '',
     exitDate: c.plannedExitDate ? c.plannedExitDate.slice(0, 10) : '',
     reefer: c.reefer
@@ -68,6 +70,7 @@ export function useYardState(enabled) {
   const [toasts, setToasts] = useState([]);
   const [stackPopup, setStackPopup] = useState(null);
   const [detailContainer, setDetailContainer] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('reconnecting');
 
   const showToast = useCallback((type, message) => {
     const id = Date.now() + Math.random();
@@ -79,7 +82,7 @@ export function useYardState(enabled) {
 
   const refreshZones = useCallback(async () => {
     const data = await api.getZones();
-    setZones(data.map((z) => ({ id: z.id, label: z.label, rows: z.rows, cols: z.cols })));
+    setZones(data.map((z) => ({ id: z.id, label: z.label, rows: z.rows, cols: z.cols, version: z.version })));
   }, []);
 
   const refreshContainers = useCallback(async () => {
@@ -91,6 +94,27 @@ export function useYardState(enabled) {
     const data = await api.getMovements(50);
     setMovements(data);
   }, []);
+
+  const refreshAll = useCallback(async () => {
+    try {
+      await Promise.all([refreshZones(), refreshContainers(), refreshMovements()]);
+    } catch (err) {
+      if (err?.status !== 401) showToast('error', `Erreur de synchronisation : ${err.message}`);
+    }
+  }, [refreshZones, refreshContainers, refreshMovements, showToast]);
+
+  const handleError = useCallback(
+    (err) => {
+      if (err?.code === 'VERSION_CONFLICT') {
+        showToast('error', 'Modifié entre-temps par un autre utilisateur : affichage rechargé.');
+        refreshAll();
+        return;
+      }
+      if (err?.status === 401) return;
+      showToast('error', err.message);
+    },
+    [showToast, refreshAll],
+  );
 
   useEffect(() => {
     if (!enabled) return;
@@ -112,18 +136,28 @@ export function useYardState(enabled) {
 
   useEffect(() => {
     if (!enabled) return;
-    const token = getToken();
-    if (!token) return;
-    const disconnect = connectYardSocket(token, (msg) => {
-      // The per-depot dataset is small, so a full refetch on every event is
-      // simpler and more robust than patching each shape (stacks, movement
-      // lists, reefer readings) incrementally from a dozen event types.
-      refreshContainers();
-      refreshMovements();
-      if (msg.event?.startsWith('zone.')) refreshZones();
+    const disconnect = connectYardSocket({
+      getTicket: async () => (await api.wsTicket()).ticket,
+      onEvent: (msg) => {
+        // The per-depot dataset is small, so a full refetch on every event is
+        // simpler and more robust than patching each shape incrementally.
+        refreshContainers();
+        refreshMovements();
+        if (msg.event?.startsWith('yard.zone.')) refreshZones();
+      },
+      onConnected: refreshAll,
+      onStatus: setConnectionStatus,
+      onUnauthorized: notifyUnauthorized,
     });
     return disconnect;
-  }, [enabled, refreshContainers, refreshMovements, refreshZones]);
+  }, [enabled, refreshAll, refreshContainers, refreshMovements, refreshZones]);
+
+  // Safety net while the websocket is down.
+  useEffect(() => {
+    if (!enabled || connectionStatus === 'connected') return;
+    const id = setInterval(refreshAll, 60_000);
+    return () => clearInterval(id);
+  }, [enabled, connectionStatus, refreshAll]);
 
   const stacks = useMemo(() => buildStacks(zones, allContainers), [zones, allContainers]);
 
@@ -142,26 +176,27 @@ export function useYardState(enabled) {
         await refreshZones();
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [showToast, refreshZones],
+    [handleError, showToast, refreshZones],
   );
 
   const editZone = useCallback(
     async (zoneId, newLabel, newRows, newCols) => {
       try {
-        await api.updateZone(zoneId, { label: newLabel, rows: newRows, cols: newCols });
+        const zone = zones.find((z) => z.id === zoneId);
+        await api.updateZone(zoneId, { label: newLabel, rows: newRows, cols: newCols, expectedVersion: zone?.version });
         showToast('success', `Zone ${zoneId} modifiée.`);
         await refreshZones();
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [showToast, refreshZones],
+    [handleError, showToast, refreshZones, zones],
   );
 
   const deleteZone = useCallback(
@@ -173,11 +208,11 @@ export function useYardState(enabled) {
         await refreshZones();
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [showToast, refreshZones, zoneFilter],
+    [handleError, showToast, refreshZones, zoneFilter],
   );
 
   // ============ CONTAINER MOVEMENTS ============
@@ -201,11 +236,11 @@ export function useYardState(enabled) {
         await Promise.all([refreshContainers(), refreshMovements()]);
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [showToast, refreshContainers, refreshMovements],
+    [handleError, showToast, refreshContainers, refreshMovements],
   );
 
   const containerDeparture = useCallback(
@@ -216,16 +251,16 @@ export function useYardState(enabled) {
         return false;
       }
       try {
-        await api.containerDeparture(ct._dbId);
+        await api.containerDeparture(ct._dbId, ct.version);
         showToast('success', `Départ : ${containerId} retiré de ${posLabel(ct.zone, ct.row, ct.col)}.`);
         await Promise.all([refreshContainers(), refreshMovements()]);
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [findByBusinessId, showToast, refreshContainers, refreshMovements],
+    [findByBusinessId, handleError, showToast, refreshContainers, refreshMovements],
   );
 
   const containerTransfer = useCallback(
@@ -237,7 +272,7 @@ export function useYardState(enabled) {
       }
       try {
         const fromPos = posLabel(ct.zone, ct.row, ct.col);
-        const updated = await api.containerTransfer(ct._dbId, targetZoneId);
+        const updated = await api.containerTransfer(ct._dbId, targetZoneId, ct.version);
         showToast(
           'success',
           `Transfert : ${containerId} de ${fromPos} → ${posLabel(updated.zoneId, updated.row, updated.col)}.`,
@@ -245,11 +280,11 @@ export function useYardState(enabled) {
         await Promise.all([refreshContainers(), refreshMovements()]);
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [findByBusinessId, showToast, refreshContainers, refreshMovements],
+    [findByBusinessId, handleError, showToast, refreshContainers, refreshMovements],
   );
 
   // ============ DRAG & DROP MOVE ============
@@ -257,16 +292,16 @@ export function useYardState(enabled) {
   const executeMove = useCallback(
     async (ct, fromZone, fromRow, fromCol, toZone, toRow, toCol, addToHistory) => {
       try {
-        await api.containerMove(ct._dbId, toZone, toRow, toCol);
+        await api.containerMove(ct._dbId, toZone, toRow, toCol, ct.version);
         if (addToHistory) {
           showToast('success', `${ct.id} déplacé de ${posLabel(fromZone, fromRow, fromCol)} → ${posLabel(toZone, toRow, toCol)}`);
         }
         await Promise.all([refreshContainers(), refreshMovements()]);
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
       }
     },
-    [showToast, refreshContainers, refreshMovements],
+    [handleError, showToast, refreshContainers, refreshMovements],
   );
 
   const moveHistory = useMemo(
@@ -297,10 +332,10 @@ export function useYardState(enabled) {
         showToast('info', `Mouvement annulé : ${move.ct.id} retourné à ${posLabel(move.fromZone, move.fromRow, move.fromCol)}`);
         await Promise.all([refreshContainers(), refreshMovements()]);
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
       }
     },
-    [moveHistory, showToast, refreshContainers, refreshMovements],
+    [moveHistory, handleError, showToast, refreshContainers, refreshMovements],
   );
 
   const movementLog = useMemo(
@@ -335,10 +370,10 @@ export function useYardState(enabled) {
         showToast('success', `Zone ${zoneId} compactée : ${count} conteneurs réorganisés.`);
         await Promise.all([refreshContainers(), refreshMovements()]);
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
       }
     },
-    [showToast, refreshContainers, refreshMovements],
+    [handleError, showToast, refreshContainers, refreshMovements],
   );
 
   const handleCompactAll = useCallback(async () => {
@@ -351,9 +386,9 @@ export function useYardState(enabled) {
       showToast('success', `Yard compacté : ${total} conteneurs réorganisés.`);
       await Promise.all([refreshContainers(), refreshMovements()]);
     } catch (err) {
-      showToast('error', err.message);
+      handleError(err);
     }
-  }, [showToast, refreshContainers, refreshMovements]);
+  }, [handleError, showToast, refreshContainers, refreshMovements]);
 
   // ============ REEFER ============
 
@@ -366,11 +401,11 @@ export function useYardState(enabled) {
         await refreshContainers();
         return true;
       } catch (err) {
-        showToast('error', err.message);
+        handleError(err);
         return false;
       }
     },
-    [findByBusinessId, showToast, refreshContainers],
+    [findByBusinessId, handleError, showToast, refreshContainers],
   );
 
   // ============ STATS ============
@@ -406,5 +441,6 @@ export function useYardState(enabled) {
     compactZone: handleCompactZone, compactAll: handleCompactAll,
     updateReefer,
     stats: { totalContainers, occupancy, reeferCount, multiStacks, typeCounts },
+    connectionStatus,
   };
 }

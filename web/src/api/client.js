@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_URL = import.meta.env.VITE_API_URL || `http://${globalThis.location?.hostname ?? 'localhost'}:4000`;
 const TOKEN_KEY = 'ccis_access_token';
 
 let accessToken = sessionStorage.getItem(TOKEN_KEY) || null;
@@ -17,10 +17,27 @@ export function setToken(token) {
   }
 }
 
+let unauthorizedHandler = null;
+
+// Registered by useAuth: any 401 on an authenticated call (or a websocket
+// closed with 4401) means the session is over.
+export function onUnauthorized(fn) {
+  unauthorizedHandler = fn;
+  return () => {
+    if (unauthorizedHandler === fn) unauthorizedHandler = null;
+  };
+}
+
+export function notifyUnauthorized() {
+  setToken(null);
+  unauthorizedHandler?.();
+}
+
 export class ApiError extends Error {
   constructor(status, body) {
     super(typeof body?.error === 'string' ? body.error : `Request failed (${status})`);
     this.status = status;
+    this.code = body?.code ?? null;
     this.body = body;
   }
 }
@@ -54,13 +71,17 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
     // empty or non-JSON body
   }
 
-  if (!res.ok) throw new ApiError(res.status, data);
+  if (!res.ok) {
+    if (res.status === 401 && auth) notifyUnauthorized();
+    throw new ApiError(res.status, data);
+  }
   return data;
 }
 
 export const api = {
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   me: () => request('/auth/me'),
+  wsTicket: () => request('/ws-ticket', { method: 'POST' }),
 
   getZones: () => request('/zones'),
   createZone: (data) => request('/zones', { method: 'POST', body: data }),
@@ -72,11 +93,12 @@ export const api = {
   getContainers: (params) => request(`/containers${toQuery(params)}`),
   getContainer: (id) => request(`/containers/${id}`),
   containerArrival: (data) => request('/containers/arrival', { method: 'POST', body: data }),
-  containerDeparture: (id) => request(`/containers/${id}/departure`, { method: 'POST' }),
-  containerTransfer: (id, targetZoneId) =>
-    request(`/containers/${id}/transfer`, { method: 'POST', body: { targetZoneId } }),
-  containerMove: (id, toZoneId, toRow, toCol) =>
-    request(`/containers/${id}/move`, { method: 'POST', body: { toZoneId, toRow, toCol } }),
+  containerDeparture: (id, expectedVersion) =>
+    request(`/containers/${id}/departure`, { method: 'POST', body: { expectedVersion } }),
+  containerTransfer: (id, targetZoneId, expectedVersion) =>
+    request(`/containers/${id}/transfer`, { method: 'POST', body: { targetZoneId, expectedVersion } }),
+  containerMove: (id, toZoneId, toRow, toCol, expectedVersion) =>
+    request(`/containers/${id}/move`, { method: 'POST', body: { toZoneId, toRow, toCol, expectedVersion } }),
   updateReefer: (id, data) => request(`/containers/${id}/reefer`, { method: 'PATCH', body: data }),
 
   getMovements: (take) => request(`/movements${toQuery({ take })}`),

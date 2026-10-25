@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export default function Header({ user, onLogout, onOpenZoneManager, onOpenMovementManager, onOpenDashboard, onOpenReeferMonitor }) {
+export default function Header({ user, connectionStatus, onLogout, onOpenZoneManager, onOpenMovementManager, onOpenDashboard, onOpenReeferMonitor }) {
   const [time, setTime] = useState('');
 
   useEffect(() => {
@@ -11,6 +11,12 @@ export default function Header({ user, onLogout, onOpenZoneManager, onOpenMoveme
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
   }, []);
+
+  const badge = {
+    connected: { cls: '', label: 'En direct' },
+    reconnecting: { cls: ' reconnecting', label: 'Reconnexion…' },
+    disconnected: { cls: ' disconnected', label: 'Hors ligne' },
+  }[connectionStatus] ?? { cls: ' reconnecting', label: 'Connexion…' };
 
   return (
     <div className="header">
@@ -38,7 +44,7 @@ export default function Header({ user, onLogout, onOpenZoneManager, onOpenMoveme
           <span className="header-action-icon">⊞</span>
           Zones
         </button>
-        <div className="live-badge"><div className="live-dot"></div> En direct</div>
+        <div className={`live-badge${badge.cls}`}><div className="live-dot"></div> {badge.label}</div>
         <div className="timestamp">{time}</div>
         {user && (
           <button className="header-action-btn header-action-secondary" onClick={onLogout} title={`${user.email} (${user.role})`}>

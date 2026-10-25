@@ -1,10 +1,21 @@
 import { useState, useCallback, useEffect } from 'react';
-import { api, getToken, setToken } from '../api/client';
+import { api, getToken, setToken, onUnauthorized } from '../api/client';
 
 export function useAuth() {
   const [token, setTok] = useState(getToken());
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(!!getToken());
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(
+    () =>
+      onUnauthorized(() => {
+        setTok(null);
+        setUser(null);
+        setSessionExpired(true);
+      }),
+    [],
+  );
 
   useEffect(() => {
     // `checking` already starts false when there's no persisted token
@@ -35,6 +46,7 @@ export function useAuth() {
     setToken(result.accessToken);
     setTok(result.accessToken);
     setUser(result.user);
+    setSessionExpired(false);
   }, []);
 
   const logout = useCallback(() => {
@@ -43,5 +55,5 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { token, user, checking, login, logout };
+  return { token, user, checking, sessionExpired, login, logout };
 }
