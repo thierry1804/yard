@@ -10,6 +10,8 @@ export async function createTokenVerifier(publicKeyPem: string): Promise<TokenVe
   return async (token) => {
     const { payload } = await jwtVerify(token, key, { issuer: 'ccis-auth', algorithms: ['RS256'] });
     if (!payload.sub || !payload.exp) throw new Error('jeton incomplet');
-    return { userId: payload.sub, role: roleSchema.parse(payload.role), exp: payload.exp };
+    const identity: VerifiedIdentity = { userId: payload.sub, role: roleSchema.parse(payload.role), exp: payload.exp };
+    if (typeof payload.email === 'string') identity.email = payload.email;
+    return identity;
   };
 }

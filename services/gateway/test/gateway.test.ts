@@ -75,13 +75,14 @@ describe('forwarding', () => {
     seen.length = 0;
     const res = await gw.inject({
       method: 'POST', url: '/containers/abc/move?x=1',
-      headers: { ...(await bearer()), 'x-user-role': 'ADMIN', 'x-correlation-id': 'corr-9' },
+      headers: { ...(await bearer()), 'x-user-role': 'ADMIN', 'x-user-email': 'spoof@evil.io', 'x-correlation-id': 'corr-9' },
       payload: { toZoneId: 'A', toRow: 0, toCol: 0 },
     });
     expect(res.statusCode).toBe(200);
     expect(seen[0]).toMatchObject({ url: '/containers/abc/move?x=1', method: 'POST', body: { toZoneId: 'A', toRow: 0, toCol: 0 } });
     expect(seen[0].headers['x-user-id']).toBe('user-1');
     expect(seen[0].headers['x-user-role']).toBe('OPERATOR');
+    expect(seen[0].headers['x-user-email']).toBe('user-1@ccis.mg');
     expect(seen[0].headers['x-correlation-id']).toBe('corr-9');
     expect(seen[0].headers.authorization).toBeUndefined();
   });

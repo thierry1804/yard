@@ -23,6 +23,7 @@ export function forwardTo(target: Target, timeoutMs = UPSTREAM_TIMEOUT_MS) {
     if (req.identity) {
       headers['x-user-id'] = req.identity.userId;
       headers['x-user-role'] = req.identity.role;
+      if (req.identity.email) headers['x-user-email'] = req.identity.email;
     }
     const hasBody = req.body !== undefined && req.body !== null && req.method !== 'GET' && req.method !== 'HEAD';
     if (hasBody) headers['content-type'] = 'application/json';

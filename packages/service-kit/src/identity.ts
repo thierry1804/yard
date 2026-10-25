@@ -5,6 +5,7 @@ import { errors } from './errors';
 export interface Identity {
   userId: string;
   role: Role;
+  email?: string;
 }
 
 declare module 'fastify' {
@@ -21,7 +22,9 @@ export function readIdentity(req: FastifyRequest): Identity | null {
   const userId = req.headers['x-user-id'];
   if (typeof userId !== 'string' || userId.length === 0) return null;
   const role = roleSchema.safeParse(req.headers['x-user-role']);
-  return role.success ? { userId, role: role.data } : null;
+  if (!role.success) return null;
+  const email = req.headers['x-user-email'];
+  return typeof email === 'string' && email.length > 0 ? { userId, role: role.data, email } : { userId, role: role.data };
 }
 
 export function requireRole(min: Role) {

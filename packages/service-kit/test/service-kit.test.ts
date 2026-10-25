@@ -63,6 +63,11 @@ describe('requireRole', () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it('includes the email forwarded by the gateway', async () => {
+    const res = await app().inject({ url: '/admin', headers: { 'x-user-id': 'u1', 'x-user-role': 'ADMIN', 'x-user-email': 'a@ccis.mg' } });
+    expect(res.json()).toEqual({ user: { userId: 'u1', role: 'ADMIN', email: 'a@ccis.mg' } });
+  });
+
   it('exposes the identity when allowed', async () => {
     const res = await app().inject({ url: '/admin', headers: { 'x-user-id': 'u1', 'x-user-role': 'ADMIN' } });
     expect(res.json()).toEqual({ user: { userId: 'u1', role: 'ADMIN' } });

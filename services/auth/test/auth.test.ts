@@ -45,6 +45,7 @@ describe('POST /auth/login', () => {
     const { payload } = await jwtVerify(body.accessToken, await importSPKI(publicPem, 'RS256'), { issuer: 'ccis-auth' });
     expect(payload.sub).toBe(body.user.id);
     expect(payload.role).toBe('OPERATOR');
+    expect(payload.email).toBe('op@ccis.mg');
     expect((payload.exp ?? 0) - (payload.iat ?? 0)).toBe(12 * 3600);
     const user = await prisma.user.findUniqueOrThrow({ where: { email: 'op@ccis.mg' } });
     expect(user.lastLoginAt).not.toBeNull();

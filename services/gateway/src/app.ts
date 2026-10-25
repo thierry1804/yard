@@ -47,7 +47,7 @@ export async function buildGatewayApp(deps: GatewayDeps): Promise<FastifyInstanc
     } catch {
       throw errors.unauthorized('Session expirée ou jeton invalide, reconnectez-vous.');
     }
-    req.identity = { userId: identity.userId, role: identity.role };
+    req.identity = { userId: identity.userId, role: identity.role, ...(identity.email ? { email: identity.email } : {}) };
     req.tokenExp = identity.exp;
   });
 
