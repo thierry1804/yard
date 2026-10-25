@@ -20,6 +20,7 @@ beforeAll(async () => {
   upstream.all('/*', async (req, reply) => {
     seen.push({ headers: req.headers, body: req.body, url: req.url, method: req.method });
     if (req.url.startsWith('/zones/missing')) return reply.code(404).send({ error: 'Zone missing introuvable.', code: 'NOT_FOUND' });
+    if (req.url.startsWith('/zones/slow')) await new Promise((r) => setTimeout(r, 6000));
     if (req.method === 'DELETE') return reply.code(204).send();
     return { ok: true, url: req.url };
   });
@@ -93,6 +94,11 @@ describe('forwarding', () => {
     expect(del.statusCode).toBe(204);
     expect(del.body).toBe('');
   });
+
+  it('waits longer than the yard transaction budget before giving up (no 503 for work that commits)', async () => {
+    const res = await gw.inject({ url: '/zones/slow', headers: await bearer() });
+    expect(res.statusCode).toBe(200);
+  }, 20_000);
 
   it('503 SERVICE_UNAVAILABLE when the upstream is down', async () => {
     const down = await buildGatewayApp({

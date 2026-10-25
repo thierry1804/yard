@@ -8,7 +8,12 @@ export interface Target {
 
 // Rebuilds outgoing headers from scratch: client-supplied x-user-* headers and
 // the Authorization header never reach the services.
-export function forwardTo(target: Target, timeoutMs = 5000) {
+// Must exceed the slowest upstream operation: yard transactions wait at most
+// 3 s for a connection/lock and run at most 10 s. Timing out earlier would
+// report a 503 for work that later commits (and invite a duplicate retry).
+export const UPSTREAM_TIMEOUT_MS = 15_000;
+
+export function forwardTo(target: Target, timeoutMs = UPSTREAM_TIMEOUT_MS) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const headers: Record<string, string> = {
       accept: 'application/json',
