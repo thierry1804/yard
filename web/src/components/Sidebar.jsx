@@ -21,7 +21,7 @@ const FILTER_LABELS = {
   'reefer-full': 'Reefer · Plein',
 };
 
-export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQuery, setSearchQuery, moveHistory, undoMove }) {
+export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQuery, setSearchQuery, moveHistory, undoMove, onSelectEntry }) {
   const filters = ['all', ...TYPES];
 
   return (
@@ -77,14 +77,22 @@ export default function Sidebar({ stats, activeFilter, setActiveFilter, searchQu
             moveHistory.slice(0, 20).map((m, i) => {
               const timeStr = m.time.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
               return (
-                <div className="move-entry" key={i}>
+                <div
+                  className="move-entry clickable"
+                  key={m.id ?? i}
+                  role="button"
+                  tabIndex={0}
+                  title={`Voir ${m.ct.id} sur le plan et sa fiche`}
+                  onClick={() => onSelectEntry(m)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectEntry(m); } }}
+                >
                   <div className="move-entry-icon">↗</div>
                   <div className="move-entry-text">
                     <strong>{m.ct.id}</strong><br />
                     {posLabel(m.fromZone, m.fromRow, m.fromCol)} → {posLabel(m.toZone, m.toRow, m.toCol)}
                   </div>
                   <span className="move-entry-time">{timeStr}</span>
-                  <button className="move-entry-undo" onClick={() => undoMove(i)}>Annuler</button>
+                  <button className="move-entry-undo" onClick={(e) => { e.stopPropagation(); undoMove(i); }}>Annuler</button>
                 </div>
               );
             })

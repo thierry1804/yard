@@ -4,7 +4,7 @@ import { posLabel } from '../data/generateData';
 import { canStack } from '../data/rules';
 import YardCell from './YardCell';
 
-export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, searchQuery, executeMove, showToast, setStackPopup, onOpenDetail }) {
+export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, searchQuery, executeMove, showToast, setStackPopup, onOpenDetail, focusCell }) {
   const [dragData, setDragData] = useState(null);
   const [hoverCell, setHoverCell] = useState(null);
   const [justMovedCell, setJustMovedCell] = useState(null);
@@ -195,6 +195,7 @@ export default function YardGrid({ stacks, zones, zoneFilter, activeFilter, sear
                           onHideTooltip={hideTooltip}
                           onContextMenu={openStackPopup}
                           justMoved={isJustMoved}
+                          focused={!!focusCell && focusCell.zone === zone.id && focusCell.row === r && focusCell.col === c}
                         />
                       </div>
                     );

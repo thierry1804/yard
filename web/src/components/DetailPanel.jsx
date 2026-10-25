@@ -83,6 +83,13 @@ export default function DetailPanel({ container, stacks, historyStamp, onClose, 
   const departed = ct?.departed || currentVisit?.status === 'DEPARTED';
   const stack = ct && !departed ? stacks[ct.zone]?.[ct.row]?.[ct.col] || [] : [];
   const r = ct?.reefer;
+  // A departed container (opened from the movement history) only carries its
+  // number and type: fall back to its last visit for the other fields.
+  const isoCode = ct?.isoCode ?? currentVisit?.isoCode;
+  const customsStatus = ct?.customsStatus ?? currentVisit?.customsStatus;
+  const client = ct?.client ?? currentVisit?.client ?? '—';
+  const weight = ct?.weight ?? (currentVisit?.weightKg != null ? `${currentVisit.weightKg} kg` : '—');
+  const plannedExit = ct?.exitDate || currentVisit?.plannedExitDate?.slice(0, 10) || '—';
 
   return (
     <>
@@ -107,22 +114,22 @@ export default function DetailPanel({ container, stacks, historyStamp, onClose, 
                   : { background: 'rgba(34,197,94,0.15)', color: 'var(--success)' }}>
                   {departed ? 'Parti' : 'Présent'}
                 </span>
-                <span className="detail-status-chip" style={ct.customsStatus === 'HOLD'
+                <span className="detail-status-chip" style={customsStatus === 'HOLD'
                   ? { background: 'rgba(239,68,68,0.15)', color: 'var(--danger)' }
                   : { background: 'var(--surface-3)', color: 'var(--text-dim)' }}>
-                  {ct.customsStatus === 'HOLD' ? 'Bloqué douane' : 'Libre douane'}
+                  {customsStatus === 'HOLD' ? 'Bloqué douane' : 'Libre douane'}
                 </span>
               </div>
 
               <div className="detail-section-title">Informations</div>
               <div className="detail-grid">
                 <Field label="Code ISO 6346" mono>
-                  {ct.isoCode || '—'}{ISO_DESCRIPTIONS[ct.isoCode] ? ` — ${ISO_DESCRIPTIONS[ct.isoCode]}` : ''}
+                  {isoCode || '—'}{ISO_DESCRIPTIONS[isoCode] ? ` — ${ISO_DESCRIPTIONS[isoCode]}` : ''}
                 </Field>
-                <Field label="Client">{ct.client}</Field>
-                <Field label="Poids" mono>{ct.weight}</Field>
-                <Field label="Entrée" mono>{currentVisit ? formatDateTime(currentVisit.entryDate) : ct.entryDate}</Field>
-                <Field label="Sortie prévue" mono>{ct.exitDate || '—'}</Field>
+                <Field label="Client">{client}</Field>
+                <Field label="Poids" mono>{weight}</Field>
+                <Field label="Entrée" mono>{currentVisit ? formatDateTime(currentVisit.entryDate) : ct.entryDate || '—'}</Field>
+                <Field label="Sortie prévue" mono>{plannedExit}</Field>
                 <Field label="Durée de séjour" mono>
                   {currentVisit ? `${dwellDays(currentVisit.entryDate, currentVisit.exitDate)} jour(s)` : '—'}
                 </Field>

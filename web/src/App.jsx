@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useYardState } from './hooks/useYardState';
 import { useAuth } from './hooks/useAuth';
 import LoginScreen from './components/LoginScreen';
@@ -12,6 +12,7 @@ import ZoneManager from './components/ZoneManager';
 import MovementManager from './components/MovementManager';
 import Dashboard from './components/Dashboard';
 import ReeferMonitor from './components/ReeferMonitor';
+import { resolveFocus } from './data/focus';
 
 function App() {
   const { user, checking, sessionExpired, serverUnreachable, login, logout } = useAuth();
@@ -42,6 +43,19 @@ function App() {
     { id: 'all', label: 'Tout' },
     ...zones.map(z => ({ id: z.id, label: `Zone ${z.id}` })),
   ];
+
+  // Clicking a movement-history entry: open the container and pulse its slot.
+  const [focusCell, setFocusCell] = useState(null);
+  const focusTimer = useRef(null);
+  const handleSelectEntry = useCallback((entry) => {
+    const f = resolveFocus(entry, allContainers, zoneFilter);
+    setZoneFilter(f.zoneFilter);
+    setDetailContainer(f.container);
+    clearTimeout(focusTimer.current);
+    setFocusCell(f.highlight);
+    if (f.highlight) focusTimer.current = setTimeout(() => setFocusCell(null), 3000);
+  }, [allContainers, zoneFilter, setZoneFilter, setDetailContainer]);
+  useEffect(() => () => clearTimeout(focusTimer.current), []);
 
   const handleOpenDetail = useCallback((ct) => {
     setStackPopup(null);
@@ -102,6 +116,7 @@ function App() {
           setSearchQuery={setSearchQuery}
           moveHistory={moveHistory}
           undoMove={undoMove}
+          onSelectEntry={handleSelectEntry}
         />
         <div className="main">
           <div className="yard-header">
@@ -155,6 +170,7 @@ function App() {
             showToast={showToast}
             setStackPopup={setStackPopup}
             onOpenDetail={setDetailContainer}
+            focusCell={focusCell}
           />
         </div>
       </div>

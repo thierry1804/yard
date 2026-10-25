@@ -321,7 +321,7 @@ export function useYardState(enabled) {
         .slice(0, 20)
         .map((m) => ({
           id: m.id,
-          ct: { id: m.container.containerNo, type: toUiType(m.container.type) },
+          ct: { id: m.container.containerNo, _dbId: m.container.id, type: toUiType(m.container.type) },
           fromZone: m.fromZoneId,
           fromRow: m.fromRow,
           fromCol: m.fromCol,

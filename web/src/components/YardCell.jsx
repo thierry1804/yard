@@ -1,9 +1,13 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { MAX_TIER } from '../data/config';
 import { canStack } from '../data/rules';
 
-export default function YardCell({ stack, zone, row, col, activeFilter, searchQuery, onDragStart, dragData, onShowTooltip, onHideTooltip, onContextMenu, justMoved }) {
+export default function YardCell({ stack, zone, row, col, activeFilter, searchQuery, onDragStart, dragData, onShowTooltip, onHideTooltip, onContextMenu, justMoved, focused }) {
   const cellRef = useRef(null);
+
+  useEffect(() => {
+    if (focused) cellRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  }, [focused]);
 
   const isEmpty = stack.length === 0;
   const topCt = !isEmpty ? stack[stack.length - 1] : null;
@@ -43,6 +47,7 @@ export default function YardCell({ stack, zone, row, col, activeFilter, searchQu
   }
 
   if (justMoved) className += ' just-moved';
+  if (focused) className += ' focused';
 
   const handleMouseDown = useCallback((e) => {
     if (!isEmpty) {
