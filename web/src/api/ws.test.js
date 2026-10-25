@@ -69,6 +69,20 @@ describe('connectYardSocket', () => {
     expect(calls.statuses.at(-1)).toBe('disconnected');
   });
 
+  it('realtime.degraded frame: reconnecting; realtime.resync: connected and resync', async () => {
+    const { calls } = setup();
+    await flush();
+    const ws = FakeWebSocket.instances[0];
+    ws.open();
+    expect(calls.connected).toBe(1);
+    ws.message({ event: 'realtime.degraded', data: null, at: 'x' });
+    expect(calls.statuses.at(-1)).toBe('reconnecting');
+    ws.message({ event: 'realtime.resync', data: null, at: 'x' });
+    expect(calls.statuses.at(-1)).toBe('connected');
+    expect(calls.connected).toBe(2);
+    expect(calls.events).toEqual([]);
+  });
+
   it('close code 4401: unauthorized, no retry', async () => {
     const { calls } = setup();
     await flush();

@@ -16,6 +16,7 @@ export class AmqpClient {
   private conn: Connection | null = null;
   private ch: ConfirmChannel | null = null;
   private readonly setups: Setup[] = [];
+  private readonly disconnectListeners: (() => void)[] = [];
   private stopped = true;
   private retryMs = 1000;
   private timer: NodeJS.Timeout | null = null;
@@ -33,6 +34,11 @@ export class AmqpClient {
   onConnected(setup: Setup): void {
     this.setups.push(setup);
     if (this.ch) void setup(this.ch).catch((err) => this.log.error({ err }, 'amqp setup failed'));
+  }
+
+  // Fired when an established connection is lost (not on stop()).
+  onDisconnected(listener: () => void): void {
+    this.disconnectListeners.push(listener);
   }
 
   async start(): Promise<void> {
@@ -84,6 +90,13 @@ export class AmqpClient {
     this.ch = null;
     if (this.stopped) return;
     this.log.warn({}, 'amqp connection closed');
+    for (const listener of this.disconnectListeners) {
+      try {
+        listener();
+      } catch (err) {
+        this.log.error({ err }, 'amqp disconnect listener failed');
+      }
+    }
     this.scheduleReconnect();
   }
 

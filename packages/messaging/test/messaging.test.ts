@@ -107,6 +107,21 @@ describe('OutboxRelay', () => {
 });
 
 describe('AmqpClient', () => {
+  it('notifies onDisconnected when the connection is lost, then reconnects', async () => {
+    const client = new AmqpClient(url, silent);
+    let disconnects = 0;
+    let connects = 0;
+    client.onDisconnected(() => { disconnects++; });
+    client.onConnected(async () => { connects++; });
+    await client.start();
+    // Publishing to a missing exchange makes the broker close the channel.
+    client.channel!.publish('missing.exchange', 'x', Buffer.from('{}'));
+    await waitFor(() => disconnects === 1);
+    await waitFor(() => connects === 2, 10_000);
+    expect(client.connected).toBe(true);
+    await client.stop();
+  });
+
   it('retries until the broker is reachable', async () => {
     const client = new AmqpClient('amqp://guest:guest@127.0.0.1:1', silent);
     await client.start();

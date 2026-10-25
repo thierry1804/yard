@@ -60,11 +60,23 @@ export function connectYardSocket({
       onConnected?.();
     };
     socket.onmessage = (event) => {
+      let msg;
       try {
-        onEvent(JSON.parse(event.data));
+        msg = JSON.parse(event.data);
       } catch {
-        // malformed frame, ignore
+        return; // malformed frame
       }
+      // Control frames from the gateway about its own link to the broker.
+      if (msg.event === 'realtime.degraded') {
+        setStatus('reconnecting');
+        return;
+      }
+      if (msg.event === 'realtime.resync') {
+        setStatus('connected');
+        onConnected?.();
+        return;
+      }
+      onEvent(msg);
     };
     socket.onclose = (event) => {
       socket = null;
