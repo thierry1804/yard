@@ -4,6 +4,7 @@ import { posLabel } from '../data/generateData';
 import { api, notifyUnauthorized } from '../api/client';
 import { toApiType, toUiType } from '../api/typeMap';
 import { connectYardSocket } from '../api/ws';
+import { coalesce } from '../api/coalesce';
 
 function toUiContainer(c) {
   return {
@@ -136,14 +137,20 @@ export function useYardState(enabled) {
 
   useEffect(() => {
     if (!enabled) return;
+    let zonesDirty = false;
+    const refreshFromEvents = coalesce(async () => {
+      const withZones = zonesDirty;
+      zonesDirty = false;
+      await Promise.all([refreshContainers(), refreshMovements(), withZones ? refreshZones() : null]);
+    });
     const disconnect = connectYardSocket({
       getTicket: async () => (await api.wsTicket()).ticket,
       onEvent: (msg) => {
-        // The per-depot dataset is small, so a full refetch on every event is
-        // simpler and more robust than patching each shape incrementally.
-        refreshContainers();
-        refreshMovements();
-        if (msg.event?.startsWith('yard.zone.')) refreshZones();
+        // The per-depot dataset is small, so a full refetch is simpler and more
+        // robust than patching each shape incrementally; coalesced so bursts
+        // of events cost one in-flight refresh plus one follow-up.
+        if (msg.event?.startsWith('yard.zone.')) zonesDirty = true;
+        refreshFromEvents();
       },
       onConnected: refreshAll,
       onStatus: setConnectionStatus,
